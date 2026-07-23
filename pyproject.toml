@@ -1,0 +1,31 @@
+[project]
+name = "iha-video-search"
+version = "0.1.0"
+description = "İHA video arşivinde doğal dil ile semantik arama (video kimliği + zaman aralığı)"
+requires-python = ">=3.11"
+dependencies = [
+    "temporalio",
+    "confluent-kafka",
+    "ffmpeg-python",
+    "pymavlink",
+    "polars",
+    "astral",
+    "pysolar",
+    "shapely",
+    "geopandas",
+    "clickhouse-connect",
+    "psycopg[binary]",
+    "ultralytics",       # YOLO26
+    "transformers",
+    "vllm",              # Qwen2.5-VL caption/rerank
+    "sglang",            # Qwen 14B + xgrammar query ayrıştırma
+    "xgrammar",
+    "ranx",              # golden set değerlendirme (NDCG, MRR, Recall@K)
+    "fiftyone",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
