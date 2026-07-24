@@ -6,3 +6,5 @@ venv/
 *.egg-info/
 .env
 poc/golden_set/data/
+/data/
+/models/

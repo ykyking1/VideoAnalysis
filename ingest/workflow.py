@@ -33,7 +33,7 @@ class VideoIngestWorkflow:
 
         telemetry_windows = await workflow.execute_activity(
             process_telemetry,
-            args=(video_id,),
+            args=(video_id, proxy_path),
             start_to_close_timeout=timedelta(minutes=30),
         )
 

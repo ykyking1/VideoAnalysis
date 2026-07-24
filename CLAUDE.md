@@ -31,14 +31,39 @@ X-CLIP (`xuguohai/X-CLIP`, MIT) mevcut lider aday — `microsoft/xclip` (Kinetic
 sınıflandırma) ile karıştırılmamalı. VideoCLIP-XL yeni aday. InternVideo2/VideoPrism/
 LanguageBind test edilmedi. Karar golden set sonucuna göre verilecek (§7, §11 madde 4).
 
+## Yerel test sapmaları (GT1030 4GB + SeaDronesSee)
+
+İlk uçtan uca yerel test için üretim tasarımından bilinçli sapmalar yapıldı - bunlar
+**geçici, sadece mekanik doğrulama** amaçlı, model/altyapı kararı olarak sayılmamalı:
+
+| Bileşen | Üretim hedefi (proje-ozeti.md) | Yerel test |
+|---|---|---|
+| Query ayrıştırma | Qwen 14B + xgrammar + SGLang | Ollama `qwen2.5:3b` + JSON schema |
+| Caption/rerank VLM | Qwen2.5-VL + vLLM | Ollama `moondream` |
+| Embedding modeli | xuguohai/X-CLIP (§5, kesinleşmedi) | `microsoft/xclip-base-patch32` (Kinetics fine-tune - §5'in "karıştırılmamalı" dediği model, sadece pip/HF'ten hazır yüklenebildiği için) |
+| Görsel alanlar | YOLO26 IR fine-tune | `yolov8n` (COCO ön-eğitimli, "boat" sınıfı vehicle_count'a sayılıyor) |
+| Sahne değişim skoru | ffmpeg scene filtresi | Basit ardışık kare farkı (frame diff) |
+| Proxy encode | ffmpeg+NVDEC | NVDEC decode + **yazılım** HEVC encode (GT1030'da NVENC donanımı yok) |
+| Telemetri | pymavlink+astral+shapely | SeaDronesSee'de telemetri yok → sabit pencereleme, türetilmiş alanlar NULL |
+| Vektör indeksi | ClickHouse HNSW | Yok (küçük test korpusu, brute-force cosineDistance) |
+| Orkestrasyon | Temporal workflow (`ingest/workflow.py`) | `scripts/ingest_video.py` aktiviteleri Temporal olmadan doğrudan çağırıyor |
+
+Gerçek kapasite/kalite kararları (model seçimi §5, chunking §9, vektör indeks
+parametreleri §6) bu yerel testten ÇIKARILMAMALI - onlar hâlâ golden set +
+gerçek donanım POC'u gerektiriyor (§7, §11).
+
 ## Klasör yapısı
 
 - `schema/` — ClickHouse `clips` tablosu ve PostgreSQL durum takibi DDL'leri
-- `ingest/` — Temporal workflow + 5 aktivite (şu an iskelet, gerçek model/parametre
-  seçimleri Adım 0 sonrası netleşecek)
-- `query/` — sorgu ayrıştırma, hibrit arama, aralık birleştirme (bu mantık bağımsız,
-  implemente edildi), rerank
+- `common/` — paylaşılan config (.env okuma) ve MinIO istemcisi
+- `ingest/` — Temporal workflow + 5 aktivite (yerel test için implemente edildi,
+  yukarıdaki tabloda listelenen sapmalarla)
+- `query/` — sorgu ayrıştırma (Ollama), hibrit arama (ClickHouse), aralık
+  birleştirme, rerank (henüz stub - opsiyonel olduğu için öncelik verilmedi)
+- `scripts/` — yerel test çalıştırıcıları: şema kurulumu, video kaydı,
+  manuel ingest, sorgu CLI'ı (bkz. README.md "Yerel test ortamı")
 - `poc/` — Adım 0 doğrulama: gerçek envanter taraması, embedding hız ölçümü, golden set
+- `docker-compose.yml` — MinIO, Kafka, ClickHouse, Postgres, Temporal, Ollama
 
 ## Teknoloji yığını
 

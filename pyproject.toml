@@ -4,28 +4,28 @@ version = "0.1.0"
 description = "İHA video arşivinde doğal dil ile semantik arama (video kimliği + zaman aralığı)"
 requires-python = ">=3.11"
 dependencies = [
+    # Şu an kullanılıyor (yerel test ortamı, bkz. README.md "Yerel test ortamı")
     "temporalio",
-    "confluent-kafka",
-    "ffmpeg-python",
-    "pymavlink",
-    "polars",
-    "astral",
-    "pysolar",
-    "shapely",
-    "geopandas",
+    "minio",
+    "requests",
+    "numpy",
     "clickhouse-connect",
     "psycopg[binary]",
-    "ultralytics",       # YOLO26
-    "transformers",
-    "vllm",              # Qwen2.5-VL caption/rerank
-    "sglang",            # Qwen 14B + xgrammar query ayrıştırma
-    "xgrammar",
-    "ranx",              # golden set değerlendirme (NDCG, MRR, Recall@K)
-    "fiftyone",
+    "torch",             # --index-url https://download.pytorch.org/whl/cu126 ile kurun (GPU)
+    "transformers",      # clip_embedding.py: microsoft/xclip-base-patch32
+    "opencv-python",     # frame örnekleme
+    "ultralytics",       # visual_fields.py: yolov8n (YOLO26 yerine yer tutucu)
 ]
 
 [project.optional-dependencies]
 dev = ["pytest"]
+# Gerçek İHA telemetrisi olduğunda (proje-ozeti.md §3.1 madde 2)
+telemetry = ["pymavlink", "polars", "astral", "pysolar", "shapely", "geopandas"]
+# Production hedefi (proje-ozeti.md §10) - GT1030 4GB'a sığmadığı için yerel
+# testte Ollama ile değiştirildi (bkz. CLAUDE.md), model seçimi de kesinleşmedi (§5)
+production = ["confluent-kafka", "vllm", "sglang", "xgrammar"]
+# Adım 0 doğrulama (proje-ozeti.md §7, §11)
+eval = ["ranx", "fiftyone"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -7,9 +7,38 @@ Claude/gelecekteki oturumlar için bağlam özeti: [CLAUDE.md](CLAUDE.md).
 
 ## Durum
 
-Henüz implementasyon aşamasında değil. [proje-ozeti.md §8](proje-ozeti.md#8-doğrulanmamış-varsayımlar--kritik-i̇mplementasyondan-önce-kontrol-edi̇lmeli)'de
-listelenen kök varsayımlar (depolama hacmi, embedding hızı, model seçimi) doğrulanmadan
-sayısal planlama ve tam implementasyon anlamsız. Sıradaki adım Adım 0 (`poc/`) doğrulamalarıdır.
+İlk uçtan uca yerel test yapılıyor (bkz. "Yerel test ortamı" altında). Kapasite/GPU-saat
+gibi sayısal varsayımlar hâlâ [proje-ozeti.md §8](proje-ozeti.md#8-doğrulanmamış-varsayımlar--kritik-i̇mplementasyondan-önce-kontrol-edi̇lmeli)'de
+listelendiği gibi doğrulanmadı - bu test yalnızca pipeline'ın *mekanik olarak*
+uçtan uca çalıştığını doğruluyor, production kapasitesini değil.
+
+## Yerel test ortamı
+
+Donanım: NVIDIA GT1030 4GB (Pascal, NVENC yok - proxy encode yazılımla yapılıyor,
+decode NVDEC ile hızlandırılıyor). Bu VRAM'e Qwen14B+SGLang ve Qwen2.5-VL+vLLM
+sığmadığı için, o iki bileşen yerel testte Ollama üzerinden küçük quantize
+modellerle değiştirildi (bkz. [CLAUDE.md](CLAUDE.md) "Yerel test sapmaları").
+
+Veri: SeaDronesSee (deniz/maritime İHA sahnesi). Bu veri setinde uçuş telemetrisi
+(MAVLink) yok, bu yüzden `ingest/activities/telemetry_processing.py` sabit
+8sn/4sn pencereleme yapıyor ve telemetriden türeyen alanları (hız, irtifa,
+güneş açısı, deniz-üstü) NULL bırakıyor - bkz. dosyanın docstring'i.
+
+### Kurulum ve çalıştırma
+
+```
+docker compose up -d
+python scripts/init_schema.py                 # ClickHouse `clips` tablosu
+docker compose exec ollama ollama pull qwen2.5:3b
+docker compose exec ollama ollama pull moondream
+
+python scripts/register_video.py <video_id> <yerel_video_dosyası>
+python scripts/ingest_video.py <video_id>
+
+python scripts/query_cli.py "gün batımında deniz üzerinde yüksek hızlarda uçan bir tekne"
+```
+
+MinIO konsolu: http://localhost:9001 · Temporal UI: http://localhost:8080
 
 ## Klasör yapısı
 
