@@ -155,6 +155,10 @@ Aşağıdakiler varsayım değil, bu depoda yapılan ölçümlerdir (docs/worklo
   §8'in 40x varsayımıyla arada ~60 kat fark var. Batch'leme + 240-360p proxy + daha
   hızlı GPU ile kapanabilir ama **tek GPU bu arşivi ingest edemez** — sistem yatay
   ölçeklenecek şekilde yazıldı (N worker = N GPU).
+  *Ek taban ölçüm (2026-07-29):* CPU-only torch, bf16, batch=2, 360p proxy →
+  **0,045x gerçek-zaman**. Bu bir ALT SINIR (hedef donanım değil), ama pipeline'ın
+  uçtan uca çalıştığını gösteriyor. Gerçek kapasite kararı için 4060/A-serisi
+  sınıfı GPU'da, batch ayarlanmış halde tekrar ölçülmeli.
 - **Hard filtre gerçek Recall kaybı yaratıyor.** Sentetik korpusta içerikle
   korelasyonlu %10 seçicilik Recall@3'ü %28,6 → %9,5'e düşürdü (eşleştirilmiş
   bootstrap %95 GA [-38,1, -4,8] — sıfırı dışlıyor). Sadece gerçek veriyle
