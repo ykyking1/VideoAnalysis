@@ -1,0 +1,41 @@
+# CPU-only kurulum — SADECE geliştirme, test ve CI için.
+#
+#     pip install -r requirements-cpu.txt
+#
+# ÜRETİMDE KULLANMAYIN. Ölçülen fark (bkz. docs/worklog_2026-07-29.md):
+# CPU'da embedding 0,045x gerçek-zaman. Bir arşiv ölçeğinde bu kabul edilemez.
+# GPU kurulumu için: requirements.txt
+#
+# Ne işe yarar: testleri çalıştırmak (pytest), sorgu katmanını geliştirmek,
+# GPU'suz bir CI makinesinde import/sözdizimi doğrulaması yapmak.
+
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+torch>=2.9.0
+torchvision>=0.24.0
+transformers>=4.57
+accelerate>=0.34
+huggingface-hub>=0.25
+qwen-vl-utils>=0.0.14
+ultralytics>=8.3
+opencv-python>=4.10
+pillow>=10.4
+
+numpy>=1.26,<3
+requests>=2.31
+python-dotenv>=1.0
+
+minio>=7.2
+qdrant-client>=1.12
+psycopg[binary]>=3.1
+
+temporalio>=1.7
+confluent-kafka>=2.5
+
+pymavlink>=2.4
+polars>=1.0
+pysolar>=0.11
+shapely>=2.0
+
+ranx>=0.3
+pytest>=8.0

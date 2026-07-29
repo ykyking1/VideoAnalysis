@@ -12,9 +12,12 @@ dependencies = [
     "psycopg[binary]>=3.1",
     "temporalio>=1.7",
     "confluent-kafka>=2.5",
-    # torch GPU icin ayrica: --index-url https://download.pytorch.org/whl/cu126
-    "torch>=2.4",
-    "torchvision>=0.19",
+    # DIKKAT: pyproject uzerinden kurulum torch'un CUDA derlemesini GARANTI
+    # ETMEZ (pip index'i buradan secilemez). GPU icin requirements.txt
+    # kullanin - orada --extra-index-url ile CUDA index'i tanimli.
+    # Kurulum sonrasi mutlaka: python -m scripts.check_env
+    "torch>=2.9.0",
+    "torchvision>=0.24.0",
     "transformers>=4.57",
     "accelerate>=0.34",
     "huggingface-hub>=0.25",

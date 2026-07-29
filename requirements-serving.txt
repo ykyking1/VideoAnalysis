@@ -1,0 +1,22 @@
+# vLLM sunucusu — sorgu ayrıştırma (§3.2 madde 1), caption (§3.1 madde 5),
+# rerank (§3.2 madde 4) için.
+#
+#     pip install -r requirements.txt          # once ana yigin
+#     pip install -r requirements-serving.txt  # sonra bu
+#
+# LINUX GEREKTİRİR. vLLM Windows'ta desteklenmiyor - WSL2 ya da Linux sunucu
+# kullanın, veya docker-compose'un `gpu` profilini çalıştırın:
+#
+#     docker compose --profile gpu up -d vllm
+#
+# NOT: Bu paketleri KURMADAN da arama çalışır. vLLM erişilemezse sorgu
+# ayrıştırıcı zarifçe semantik metne düşer (yapısal filtreler devre dışı
+# kalır), caption üretilmez, rerank atlanır. Yani bu dosya opsiyoneldir -
+# ama yapısal filtreleme (§3.2'nin yarısı) onsuz çalışmaz.
+#
+# vLLM kendi torch sürümünü çekebilir; requirements.txt'ten SONRA kurun ve
+# ardından `python -m scripts.check_env` ile torch'un hâlâ CUDA derlemesi
+# olduğunu doğrulayın.
+
+vllm>=0.6
+xgrammar>=0.1

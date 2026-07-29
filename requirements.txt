@@ -1,16 +1,35 @@
-# İHA Video Arşivinde Semantik Arama - tam bağımlılık listesi
+# İHA Video Arşivinde Semantik Arama — GPU (CUDA) kurulumu
 #
-# PyTorch: CUDA sürümüne göre AYRI kurulmalı. Bu dosyadaki `torch` satırı
-# CPU sürümünü çeker. GPU (RTX 4060 / CUDA 12.x) için ÖNCE şunu çalıştırın:
+#     pip install -r requirements.txt
+#     python -m scripts.check_env        # <- ATLAMAYIN
 #
-#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+# Bu dosya CUDA'lı PyTorch kurar. Aşağıdaki --extra-index-url satırı sayesinde
+# pip, torch'u PyPI yerine PyTorch'un CUDA index'inden çeker (+cu126 yerel sürüm
+# etiketi PEP 440'ta düz sürümden BÜYÜK sayıldığı için CUDA derlemesi tercih
+# edilir). Doğrulanmış: bu index'te en güncel torch 2.13.0+cu126.
 #
-# sonra: pip install -r requirements.txt
+# NEDEN BU KADAR VURGU: Düz `pip install torch` Windows'ta CPU derlemesi kurar
+# ve HİÇBİR HATA VERMEZ - sistem çalışır, ingest ~15-20 kat yavaş koşar. Bir
+# arşiv ölçeğinde bu aylar demektir. `scripts/check_env.py` bunu yakalar.
 #
-# vLLM: sadece sorgu ayrıştırma / caption / rerank için gerekli ve Linux
-# gerektirir (Windows'ta desteklenmiyor). Windows'ta geliştiriyorsanız vLLM'i
-# WSL2'de ya da docker-compose'un `gpu` profilinde çalıştırın; bu dosyadaki
-# istemci tarafı (requests) her yerde çalışır.
+# Farklı CUDA sürümü gerekiyorsa (ör. Blackwell/RTX 50xx için cu128) aşağıdaki
+# URL'i değiştirin: https://download.pytorch.org/whl/cu128
+#
+# CPU-only geliştirme/CI için: requirements-cpu.txt
+# vLLM sunucusu (sorgu ayrıştırma/caption/rerank, Linux): requirements-serving.txt
+
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+# --- Model çalıştırma (GPU) ---
+torch>=2.9.0
+torchvision>=0.24.0
+transformers>=4.57          # Qwen3-VL bu sürümden itibaren destekli
+accelerate>=0.34
+huggingface-hub>=0.25
+qwen-vl-utils>=0.0.14       # < 0.0.14 SESSİZCE bozuk embedding üretir
+ultralytics>=8.3            # YOLO26
+opencv-python>=4.10
+pillow>=10.4
 
 # --- Çekirdek ---
 numpy>=1.26,<3
@@ -26,17 +45,6 @@ psycopg[binary]>=3.1
 temporalio>=1.7
 confluent-kafka>=2.5
 
-# --- Model çalıştırma (embedding + görsel alanlar) ---
-torch>=2.4
-torchvision>=0.19
-transformers>=4.57
-accelerate>=0.34
-huggingface-hub>=0.25
-qwen-vl-utils>=0.0.14
-ultralytics>=8.3          # YOLO26 desteği
-opencv-python>=4.10
-pillow>=10.4
-
 # --- Telemetri (proje-ozeti.md §3.1 madde 2) ---
 pymavlink>=2.4
 polars>=1.0
@@ -44,7 +52,6 @@ pysolar>=0.11
 shapely>=2.0
 
 # --- Değerlendirme (proje-ozeti.md §7) ---
-# ranx: NDCG/MRR/Recall metrikleri
 ranx>=0.3
 
 # --- Geliştirme ---
