@@ -5,9 +5,10 @@
 
 **Kapsam:**
 - Tam pipeline (ingest + sorgu)
-- **vLLM yapısal filtreleme her zaman açık** — bu rehberde opsiyonel değil
+- **vLLM yapısal filtreleme dahil** — sorgu aşamasında sürekli açık
+  (ingest sırasında kapalı, gerekçesi 0. bölümde)
 - **Rerank opsiyonel** — 12. bölüm, ekstra VRAM istiyor
-- Birkaç GB'lık veriyle deneme (8. bölümde ne anlama geldiği açıklanıyor)
+- Birkaç GB'lık veriyle deneme (7. bölümde ne anlama geldiği açıklanıyor)
 
 ---
 
@@ -18,25 +19,45 @@
 (denendi). Bu rehber **Ubuntu Linux** varsayıyor. Windows'taysanız 1. bölümde
 WSL2 kuruyoruz — WSL içi Ubuntu ile birebir aynı, sonraki adımlar değişmiyor.
 
-**2. GPU belleği iki modeli aynı anda tutmalı.** Sorgu anında hem embedding
-modeli hem ayrıştırıcı LLM yüklü olur. Gerçek ağırlık boyutları:
+**2. İki aşama var ve aynı anda çalışmaları GEREKMİYOR.**
+
+| Aşama | Gereken modeller | vLLM? |
+|---|---|---|
+| **Ingest** — bir kez, uzun toplu iş | embedding + YOLO | ❌ gerekmiyor |
+| **Sorgu servisi** — sürekli | embedding + ayrıştırıcı | ✅ gerekiyor |
+
+vLLM sorgu ayrıştırması **her sorguda** çalışır, o yüzden sorgu servisi
+ayaktayken modelin yüklü kalması gerekir (5 GB'lık ağırlığı sorgu başına
+yüklemek onlarca saniye sürer, kabul edilemez). Ama **ingest sırasında
+kapalı olmalı** — hem gereksiz hem zararlı: VRAM'i bölüp embedding batch'ini
+küçültür, ingest'i yavaşlatır.
+
+**Bu rehberde sıra: önce ingest (vLLM kapalı) → sonra vLLM → sorgu testleri.**
+
+Gerçek ağırlık boyutları (HuggingFace'ten doğrulandı):
 
 | Model | Ağırlık | Rolü |
 |---|---|---|
-| Qwen3-VL-Embedding-2B | 3.96 GB | embedding (zorunlu) |
+| Qwen3-VL-Embedding-2B | 3.96 GB | embedding (her iki aşamada) |
 | Qwen2.5-3B-Instruct-AWQ | 2.50 GB | ayrıştırıcı (küçük) |
 | Qwen2.5-7B-Instruct-AWQ | 5.19 GB | ayrıştırıcı (büyük) |
 | Qwen2.5-VL-7B-Instruct-AWQ | 6.45 GB | ayrıştırıcı **+ rerank** (tek model, iki iş) |
 
-| VRAM | Önerilen ayrıştırıcı | Rerank |
+Sorgu aşamasında ikisi birlikte yüklü olur:
+
+| VRAM | Ayrıştırıcı | Rerank |
 |---|---|---|
-| **8 GB** | 3B-AWQ (3.96+2.50 = 6.5 GB, sıkışık) | ❌ sığmaz |
-| **12 GB** | 7B-AWQ (3.96+5.19 = 9.2 GB) | ⚠️ VL-7B ile denenebilir |
-| **16 GB+** | 7B-AWQ, ya da VL-7B | ✅ VL-7B tek model ikisini de yapar |
+| **8 GB** | 7B-AWQ sıkışık (3.96+5.19=9.2 GB → sığmaz); **3B-AWQ** kullanın (6.5 GB) | ❌ |
+| **12 GB** | 7B-AWQ rahat (9.2 GB) | ⚠️ VL-7B ile denenebilir |
+| **16 GB+** | 7B-AWQ ya da VL-7B | ✅ VL-7B tek modelde ikisi |
 
 Bunlar sadece ağırlıklar — KV cache ve ara tensörler için ~%20 pay bırakın.
 
-**3. Birkaç GB veri az bir veridir.** 8. bölümde neden ve ne beklemeniz
+> **Üretimde bu sorun yok:** ingest worker'ları ve sorgu sunucusu ayrı
+> makinelerde olur (proje-ozeti.md §3.1 — N worker = N GPU). Tek makinede
+> deneme yaptığımız için sıralama gerekiyor.
+
+**3. Birkaç GB veri az bir veridir.** 7. bölümde neden ve ne beklemeniz
 gerektiği yazıyor. Kısacası: hız ölçümü ve mekanik doğrulama için yeterli,
 arama kalitesi değerlendirmesi için değil.
 
@@ -153,7 +174,10 @@ pip install -r requirements.txt
 (`--extra-index-url .../cu126`). RTX 50xx/Blackwell kartınız varsa dosyanın
 ilk satırındaki `cu126`'yı `cu128` yapın.
 
-### vLLM (yapısal filtreleme — bu rehberde zorunlu)
+### vLLM (yapısal filtreleme)
+
+Kurulumu şimdi yapıyoruz ama **sunucuyu 10. bölümde başlatacağız** —
+ingest sırasında açık olması VRAM'i boşuna bölerdi.
 
 ```bash
 pip install -r requirements-serving.txt
@@ -217,51 +241,7 @@ Temporal <http://localhost:8080>.
 
 ---
 
-## 7. vLLM sunucusu (yapısal filtreleme)
-
-**VRAM'inize göre model seçin** (0. bölümdeki tablo):
-
-```bash
-# 8 GB VRAM
-export PARSE_MODEL=Qwen/Qwen2.5-3B-Instruct-AWQ
-export VLLM_GPU_FRAC=0.30
-
-# 12-16 GB VRAM
-export PARSE_MODEL=Qwen/Qwen2.5-7B-Instruct-AWQ
-export VLLM_GPU_FRAC=0.45
-```
-
-Ayrı bir terminalde (venv aktifken) başlatın:
-
-```bash
-source .venv/bin/activate
-vllm serve $PARSE_MODEL \
-    --guided-decoding-backend xgrammar \
-    --gpu-memory-utilization $VLLM_GPU_FRAC \
-    --max-model-len 8192
-```
-
-> **`--gpu-memory-utilization` kritik.** vLLM varsayılan olarak GPU'nun
-> %90'ını kendine ayırır ve embedding modeline yer bırakmaz. Yukarıdaki
-> değerler embedding modeline (3.96 GB) pay bırakacak şekilde seçildi.
-
-İlk çalıştırmada model indirilir (2.5-5 GB), birkaç dakika sürer.
-`Application startup complete` görünce hazırdır.
-
-**İlk terminalde** doğrulayın:
-```bash
-python -m scripts.check_env
-```
-`[OK  ] vLLM erisilebilir` görmelisiniz.
-
-`.env`'e kalıcı yazın ki her seferinde export etmeyesiniz:
-```bash
-echo "PARSE_MODEL=$PARSE_MODEL" >> .env
-```
-
----
-
-## 8. Veri — "birkaç GB" ne demek
+## 7. Veri — "birkaç GB" ne demek
 
 ### Önce dürüst bir uyarı
 
@@ -343,9 +323,13 @@ echo "COASTLINE_GEOJSON=/yol/land_polygons.geojson" >> .env
 
 ---
 
-## 9. KALİBRASYON — tek videoyla (en kritik adım)
+## 8. KALİBRASYON — tek videoyla (en kritik adım)
 
 **Toplu yüklemeden önce mutlaka bu.**
+
+> **vLLM'i henüz başlatmayın.** Bu ve sonraki bölüm (ingest) vLLM
+> gerektirmiyor; kapalı olması tüm VRAM'i embedding'e bırakır, daha büyük
+> batch kullanabilirsiniz ve ingest daha hızlı biter. vLLM 10. bölümde.
 
 ```bash
 VIDEO=$(ls ~/videolar/* | head -1)
@@ -379,7 +363,7 @@ echo "EMBEDDING_BATCH_SIZE=16" >> .env
 
 ---
 
-## 10. Toplu ingest
+## 9. Toplu ingest
 
 ### Önce Temporal yolunu tek videoyla sınayın
 
@@ -427,6 +411,71 @@ from common import config
 i = get_client().get_collection(config.QDRANT_COLLECTION)
 print(i.points_count, 'pencere |', round(i.points_count*8/3600, 2), 'saat')
 "
+```
+
+---
+
+## 10. vLLM sunucusu (yapısal filtreleme)
+
+> **Bu adım ingest BİTTİKTEN SONRA.** vLLM ingest sırasında gerekmez ve
+> açık olursa VRAM'i bölüp embedding batch'ini küçültür — ingest'i
+> yavaşlatır. Sıra: ingest (vLLM kapalı) → vLLM başlat → sorgu testleri.
+
+vLLM'in tek işi kullanıcı sorgusunu **yapısal filtre + semantik metne**
+ayırmak:
+
+```
+"gece deniz uzerinde 3 tekne"
+   ↓ vLLM + xgrammar (sema zorlamali)
+{is_night: true, over_sea: true, min_vehicle_count: 3} + semantik: "tekne"
+   ↓ query/filter_builder.py
+Qdrant filtresi
+```
+
+Model **sorgu metni yazmıyor**, sadece şemadaki alanları dolduruyor; sorguyu
+kod kuruyor. Bu sayede geçersiz sorgu ya da enjeksiyon üretilemiyor.
+
+Ayrıştırma **her sorguda** çalışır, o yüzden sorgu servisi ayaktayken model
+yüklü kalır — 5 GB ağırlığı sorgu başına yüklemek onlarca saniye sürerdi.
+
+**VRAM'inize göre model seçin** (0. bölümdeki tablo):
+
+```bash
+# 8 GB VRAM
+export PARSE_MODEL=Qwen/Qwen2.5-3B-Instruct-AWQ
+export VLLM_GPU_FRAC=0.30
+
+# 12-16 GB VRAM
+export PARSE_MODEL=Qwen/Qwen2.5-7B-Instruct-AWQ
+export VLLM_GPU_FRAC=0.45
+```
+
+Ayrı bir terminalde (venv aktifken) başlatın:
+
+```bash
+source .venv/bin/activate
+vllm serve $PARSE_MODEL \
+    --guided-decoding-backend xgrammar \
+    --gpu-memory-utilization $VLLM_GPU_FRAC \
+    --max-model-len 8192
+```
+
+> **`--gpu-memory-utilization` kritik.** vLLM varsayılan olarak GPU'nun
+> %90'ını kendine ayırır ve embedding modeline yer bırakmaz. Yukarıdaki
+> değerler embedding modeline (3.96 GB) pay bırakacak şekilde seçildi.
+
+İlk çalıştırmada model indirilir (2.5-5 GB), birkaç dakika sürer.
+`Application startup complete` görünce hazırdır.
+
+**İlk terminalde** doğrulayın:
+```bash
+python -m scripts.check_env
+```
+`[OK  ] vLLM erisilebilir` görmelisiniz.
+
+`.env`'e kalıcı yazın ki her seferinde export etmeyesiniz:
+```bash
+echo "PARSE_MODEL=$PARSE_MODEL" >> .env
 ```
 
 ---
@@ -541,7 +590,7 @@ Denemeden sonra bunları not edin; proje-ozeti.md §8 bunları bekliyor:
 | `CUDA out of memory` (ingest) | `EMBEDDING_BATCH_SIZE` düşürün; vLLM'in `--gpu-memory-utilization`'ını azaltın |
 | vLLM başlarken OOM | `--gpu-memory-utilization` düşürün ya da daha küçük model (3B-AWQ) |
 | Tüm sorgular aynı sonucu veriyor | `qwen-vl-utils` eski olabilir → `check_env`. Elle: iki farklı metnin kosinüsü 1.0 çıkarsa embedding bozuk |
-| Her sorguda gevşetme | Korpus küçük (8. bölüm) ya da telemetri yok → `SEARCH_MIN_RESULTS=1` |
+| Her sorguda gevşetme | Korpus küçük (7. bölüm) ya da telemetri yok → `SEARCH_MIN_RESULTS=1` |
 | `moov atom not found` | Video dosyası eksik/bozuk — kopyalamayı tekrarlayın |
 | `Yapisal filtre: filtre yok` (hep) | vLLM erişilemiyor → `check_env`, sunucu terminaline bakın |
 | Docker izin hatası | `sudo usermod -aG docker $USER` sonra `newgrp docker` |
