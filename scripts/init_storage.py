@@ -11,7 +11,7 @@ import argparse
 import sys
 
 from common import config
-from common.minio_client import ensure_buckets
+from common.minio_client import backend_name, ensure_buckets
 from common.qdrant_store import ensure_collection, get_client
 
 
@@ -19,6 +19,16 @@ def init_qdrant(recreate: bool) -> None:
     client = get_client()
     collection = ensure_collection(client, recreate=recreate)
     info = client.get_collection(collection)
+
+    if config.QDRANT_LOCAL_PATH:
+        print(f"[qdrant] koleksiyon '{collection}' hazir - GOMULU MOD "
+              f"({config.QDRANT_LOCAL_PATH})")
+        print(f"[qdrant] boyut={config.EMBEDDING_DIM}, nokta={info.points_count}")
+        print("[qdrant] NOT: gomulu mod tam (exact) arama yapar - payload "
+              "indeksleri ve kuantizasyon yok sayilir.")
+        print("[qdrant] Islevsel testler gecerli, GECIKME OLCUMLERI GECERSIZ.")
+        return
+
     print(f"[qdrant] koleksiyon '{collection}' hazir "
           f"(boyut={config.EMBEDDING_DIM}, nokta={info.points_count}, "
           f"kuantizasyon={config.QDRANT_QUANTIZATION}, on_disk={config.QDRANT_ON_DISK})")
@@ -26,9 +36,10 @@ def init_qdrant(recreate: bool) -> None:
     print(f"[qdrant] payload indeksleri: {', '.join(sorted(schema)) or '(yok)'}")
 
 
-def init_minio() -> None:
+def init_storage_backend() -> None:
     ensure_buckets()
-    print(f"[minio] bucket'lar hazir: {config.MINIO_BUCKET_RAW}, {config.MINIO_BUCKET_PROXY}")
+    print(f"[depo] {backend_name()} - bucket'lar hazir: "
+          f"{config.MINIO_BUCKET_RAW}, {config.MINIO_BUCKET_PROXY}")
 
 
 def init_postgres() -> None:
@@ -67,7 +78,7 @@ def main() -> int:
             print("iptal edildi")
             return 1
 
-    init_minio()
+    init_storage_backend()
     init_qdrant(args.recreate_collection)
     if not args.skip_postgres:
         init_postgres()

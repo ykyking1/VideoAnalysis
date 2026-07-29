@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 from common import config
-from common.minio_client import ensure_buckets, get_client
+from common.minio_client import backend_name, ensure_buckets, get_client
 
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".avi", ".mpg", ".mpeg", ".m4v")
 
@@ -48,12 +48,12 @@ def register(video_id: str, local_path: str, telemetry_path: str | None = None) 
     suffix = Path(local_path).suffix or ".mp4"
     source_path = f"{video_id}/raw{suffix}"
     client.fput_object(config.MINIO_BUCKET_RAW, source_path, local_path)
-    print(f"  video  -> minio://{config.MINIO_BUCKET_RAW}/{source_path}")
+    print(f"  video  -> {config.MINIO_BUCKET_RAW}/{source_path}  [{backend_name()}]")
 
     if telemetry_path:
         telemetry_key = f"{video_id}/telemetry{Path(telemetry_path).suffix or '.tlog'}"
         client.fput_object(config.MINIO_BUCKET_RAW, telemetry_key, telemetry_path)
-        print(f"  telemetri -> minio://{config.MINIO_BUCKET_RAW}/{telemetry_key}")
+        print(f"  telemetri -> {config.MINIO_BUCKET_RAW}/{telemetry_key}")
 
     _record_state(video_id, source_path)
     return source_path

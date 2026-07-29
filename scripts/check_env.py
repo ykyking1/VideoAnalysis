@@ -132,12 +132,17 @@ def check_services() -> None:
         report(FAIL, f"Qdrant erisilemiyor ({config.QDRANT_HOST}:{config.QDRANT_PORT}): "
                      f"{str(exc)[:120]}")
 
+    from common.minio_client import backend_name, get_client as storage_client
     try:
-        from common.minio_client import get_client as minio_client
-        minio_client().list_buckets()
-        report(OK, "MinIO erisilebilir")
+        buckets = storage_client().list_buckets()
+        report(OK, f"Nesne deposu erisilebilir: {backend_name()} "
+                   f"({len(buckets)} bucket)")
     except Exception as exc:  # noqa: BLE001
-        report(WARN, f"MinIO erisilemiyor ({config.MINIO_ENDPOINT}): {str(exc)[:120]}")
+        report(FAIL, f"Nesne deposu erisilemiyor: {backend_name()} - {str(exc)[:120]}")
+        if not config.LOCAL_STORAGE_PATH:
+            print("        Docker calistiramiyorsaniz MinIO yerine dosya sistemi "
+                  "kullanabilirsiniz:")
+            print("        export LOCAL_STORAGE_PATH=/veri/storage")
 
     from common.llm import health_check
     if health_check():

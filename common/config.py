@@ -23,6 +23,11 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 # --- Nesne deposu (ham video + model proxy'leri) ---
+# Tanimliysa MinIO yerine yerel dizin kullanilir (Colab/Kaggle gibi Docker
+# calistirilamayan ortamlar ve hizli yerel gelistirme icin).
+# URETIMDE KULLANMAYIN: dagitik worker'lar (proje-ozeti.md §3.1) paylasimli
+# nesne deposu gerektiriyor, dosya sistemi tek makineye bagli.
+LOCAL_STORAGE_PATH = os.environ.get("LOCAL_STORAGE_PATH") or None
 MINIO_ENDPOINT = _env("MINIO_ENDPOINT", "localhost:9000")
 MINIO_ROOT_USER = _env("MINIO_ROOT_USER", "minioadmin")
 MINIO_ROOT_PASSWORD = _env("MINIO_ROOT_PASSWORD", "minioadmin123")
