@@ -221,13 +221,26 @@ docker stats --no-stream          # bellek/CPU baskisi
 
 ---
 
-## 7. vLLM — sorgu tarafı
+## 7. vLLM — sorgu tarafı (yapısal ayrıştırma)
 
-**Tek GPU'daysanız: ingest BİTTİKTEN SONRA başlatın.** İkisi aynı anda VRAM'i
-böler, ikisi de yavaşlar veya OOM olur.
+### Önce: hangi ortamdasınız?
+
+vLLM **Windows'u desteklemiyor** — resmi platform listesi Linux tabanlı
+(NVIDIA CUDA / ROCm / Intel XPU / Apple Silicon). Windows'ta `pip install vllm`
+hazır paket bulamayıp kaynaktan derlemeye çalışır ve başarısız olur (denendi).
+
+| Ortamınız | Ne yapmalı |
+|---|---|
+| **Linux sunucu** | Doğrudan `pip install -r requirements-serving.txt` |
+| **Colab / Kaggle** | Zaten Linux — doğrudan kurulur |
+| **Windows + Docker** | `docker compose --profile gpu up -d vllm` (konteyner Linux, altta WSL2) |
+| **Windows + WSL2** | WSL içine kurun, host'tan `localhost:8000` üzerinden erişilir |
+| **Windows, çıplak** | Mümkün değil — yukarıdaki iki yoldan birini seçin |
+
+### Kurulum
 
 ```bash
-pip install -r requirements-serving.txt      # Linux gerektirir
+pip install -r requirements-serving.txt
 
 vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
     --guided-decoding-backend xgrammar \
@@ -236,11 +249,22 @@ vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
 python -m scripts.check_env                  # "vLLM erisilebilir" gormeli
 ```
 
+**Tek GPU'daysanız: ingest BİTTİKTEN SONRA başlatın.** İkisi aynı anda VRAM'i
+böler, ikisi de yavaşlar veya OOM olur.
+
 > vLLM kendi torch sürümünü çekebilir — kurduktan sonra `check_env`'i tekrar
 > çalıştırıp torch'un hâlâ CUDA derlemesi olduğunu doğrulayın.
 
-vLLM olmadan da arama çalışır: sorgu tamamen semantik metne düşer, yapısal
-filtreler devre dışı kalır.
+### vLLM olmadan ne kaybedersiniz
+
+**Arama durmaz.** vLLM erişilemezse sorgu ayrıştırıcı zarifçe semantik metne
+düşer (canlı doğrulandı). Kaybedilen tek şey **yapısal ayrıştırma**: "gece",
+"deniz üzerinde", "3 tekne" gibi ifadeler filtreye dönüşmez, hepsi vektör
+aramasına gider.
+
+Yani vLLM'i kuramıyorsanız da embedding kalitesini, gevşetme mekanizmasını
+(elle `StructuredFilters` kurarak) ve hız ölçümlerini test edebilirsiniz —
+sadece §3.2 madde 1 doğrulanmamış kalır.
 
 ---
 

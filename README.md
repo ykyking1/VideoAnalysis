@@ -196,13 +196,23 @@ PyTorch'un CUDA index'inden çeker. Farklı bir CUDA sürümü gerekiyorsa
 > (bkz. [docs/worklog_2026-07-29.md](docs/worklog_2026-07-29.md)). `check_env`
 > her ikisini de yakalar.
 
-`vllm` **Linux gerektirir** ve `requirements.txt`'te yok. Sorgu ayrıştırma /
-caption / rerank için:
+### vLLM (yapısal sorgu ayrıştırma) — ayrı kurulum
 
-```bash
-pip install vllm xgrammar          # Linux / WSL2
-# veya docker compose --profile gpu up -d vllm
-```
+vLLM'in resmi platform listesinde **Windows yok** (NVIDIA CUDA / AMD ROCm /
+Intel XPU / Apple Silicon — hepsi Linux tabanlı). Windows'ta `pip install vllm`
+hazır paket bulamayıp kaynaktan derlemeye çalışır ve başarısız olur.
+
+| Ortam | Yol |
+|---|---|
+| Linux / Colab / Kaggle | `pip install -r requirements-serving.txt` |
+| Windows + Docker | `docker compose --profile gpu up -d vllm` |
+| Windows + WSL2 | WSL içine kurun, host'tan `localhost:8000` |
+| Ayrı sunucu | `VLLM_BASE_URL`'i ona yönlendirin |
+
+**vLLM olmadan da arama çalışır** — sorgu ayrıştırıcı zarifçe semantik metne
+düşer. Kaybedilen tek şey yapısal filtreleme ("gece", "3 tekne" gibi
+ifadelerin filtreye dönüşmesi); embedding, gevşetme ve aralık birleştirme
+etkilenmez.
 
 ### 2. Altyapı
 

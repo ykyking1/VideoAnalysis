@@ -4,10 +4,15 @@
 #     pip install -r requirements.txt          # once ana yigin
 #     pip install -r requirements-serving.txt  # sonra bu
 #
-# LINUX GEREKTİRİR. vLLM Windows'ta desteklenmiyor - WSL2 ya da Linux sunucu
-# kullanın, veya docker-compose'un `gpu` profilini çalıştırın:
+# LINUX GEREKTİRİR. vLLM'in resmi platform listesinde Windows YOK (NVIDIA CUDA,
+# AMD ROCm, Intel XPU, Apple Silicon - hepsi Linux tabanlı). Windows'ta
+# `pip install vllm` hazır paket bulamayıp kaynaktan derlemeye çalışır ve
+# uzun-yol sınırında başarısız olur (denendi).
 #
-#     docker compose --profile gpu up -d vllm
+# Windows'taysanız üç seçenek:
+#   1. docker compose --profile gpu up -d vllm    (konteyner Linux, altta WSL2)
+#   2. WSL2 içine kurun, host'tan localhost:8000 üzerinden erişilir
+#   3. Ayrı bir Linux sunucuda çalıştırıp VLLM_BASE_URL'i ona yönlendirin
 #
 # NOT: Bu paketleri KURMADAN da arama çalışır. vLLM erişilemezse sorgu
 # ayrıştırıcı zarifçe semantik metne düşer (yapısal filtreler devre dışı
