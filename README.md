@@ -13,10 +13,14 @@ mission_017   1:02:24 - 1:02:56   (32s, 4 pencere, skor=0.774)
 Tam tasarım dokümanı: [proje-ozeti.md](proje-ozeti.md).
 Karar günlüğü ve ölçüm kayıtları: [docs/](docs/).
 
-> **Yeni bir makinede sıfırdan kurup deneyecekseniz:**
-> [docs/deneme-rehberi.md](docs/deneme-rehberi.md) — kurulumdan sorgu
-> testlerine kadar adım adım, her adımda ne görmeniz gerektiği ve ters
-> giderse ne yapacağınızla birlikte.
+> **Hiçbir şeyin kurulu olmadığı bir makinede sıfırdan kuracaksanız:**
+> [docs/sifirdan-kurulum.md](docs/sifirdan-kurulum.md) — NVIDIA
+> sürücüsünden çalışan aramaya kadar her adım, vLLM yapısal filtreleme
+> dahil, VRAM planlamasıyla birlikte.
+>
+> Ortam zaten hazırsa ve sadece deneme akışını istiyorsanız:
+> [docs/deneme-rehberi.md](docs/deneme-rehberi.md).
+> Colab'da denemek için: [poc/colab_pipeline_trial.ipynb](poc/colab_pipeline_trial.ipynb).
 
 ---
 
