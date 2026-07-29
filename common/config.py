@@ -67,7 +67,7 @@ EMBEDDING_MODEL_DIR = os.environ.get("EMBEDDING_MODEL_DIR") or None  # yerel kop
 EMBEDDING_DIM = _env_int("EMBEDDING_DIM", 2048)  # MRL ile 64-2048 arasi kisaltilabilir
 EMBEDDING_NUM_FRAMES = _env_int("EMBEDDING_NUM_FRAMES", 8)
 EMBEDDING_BATCH_SIZE = _env_int("EMBEDDING_BATCH_SIZE", 8)
-EMBEDDING_DTYPE = _env("EMBEDDING_DTYPE", "auto")  # "auto" | "float16" | "bfloat16"
+EMBEDDING_DTYPE = _env("EMBEDDING_DTYPE", "auto")  # auto | float16 | bfloat16 | float32
 
 # --- Pencereleme (proje-ozeti.md §3.1 madde 2) ---
 # 8sn/8sn ortusmesiz: gercek envanterde (§8) %50 ortusmeli 4sn kaydirma ~1

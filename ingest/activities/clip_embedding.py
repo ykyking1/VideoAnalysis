@@ -51,8 +51,20 @@ def _resolve_dtype() -> torch.dtype:
         return torch.float16
     if config.EMBEDDING_DTYPE == "bfloat16":
         return torch.bfloat16
-    # auto: bf16 sadece Ampere+ (compute capability >= 8.0) uzerinde hizli
-    if torch.cuda.is_available() and torch.cuda.get_device_capability()[0] >= 8:
+    if config.EMBEDDING_DTYPE == "float32":
+        return torch.float32
+
+    # auto:
+    if not torch.cuda.is_available():
+        # CPU'da float16 KULLANILMAZ - PyTorch CPU backend'inde bircok op
+        # fp16 icin implemente degil ("not implemented for 'Half'") ve
+        # implemente olanlar da fp32'ye gore yavas. bfloat16 CPU'da destekli
+        # ve modelin dogal dtype'i (config.json: bfloat16), ayrica fp32'nin
+        # yarisi kadar RAM kullaniyor - 2B parametrede 4GB vs 8GB.
+        return torch.bfloat16
+    # bf16 Tensor Core sadece Ampere+ (compute capability >= 8.0) uzerinde;
+    # Turing'de (T4, cc 7.5) emulasyona dusup ~10x yavasliyor - olculdu.
+    if torch.cuda.get_device_capability()[0] >= 8:
         return torch.bfloat16
     return torch.float16
 
