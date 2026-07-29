@@ -1,0 +1,51 @@
+# İHA Video Arşivinde Semantik Arama - tam bağımlılık listesi
+#
+# PyTorch: CUDA sürümüne göre AYRI kurulmalı. Bu dosyadaki `torch` satırı
+# CPU sürümünü çeker. GPU (RTX 4060 / CUDA 12.x) için ÖNCE şunu çalıştırın:
+#
+#     pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
+#
+# sonra: pip install -r requirements.txt
+#
+# vLLM: sadece sorgu ayrıştırma / caption / rerank için gerekli ve Linux
+# gerektirir (Windows'ta desteklenmiyor). Windows'ta geliştiriyorsanız vLLM'i
+# WSL2'de ya da docker-compose'un `gpu` profilinde çalıştırın; bu dosyadaki
+# istemci tarafı (requests) her yerde çalışır.
+
+# --- Çekirdek ---
+numpy>=1.26,<3
+requests>=2.31
+python-dotenv>=1.0
+
+# --- Nesne deposu / vektör deposu / durum ---
+minio>=7.2
+qdrant-client>=1.12
+psycopg[binary]>=3.1
+
+# --- Orkestrasyon ---
+temporalio>=1.7
+confluent-kafka>=2.5
+
+# --- Model çalıştırma (embedding + görsel alanlar) ---
+torch>=2.4
+torchvision>=0.19
+transformers>=4.57
+accelerate>=0.34
+huggingface-hub>=0.25
+qwen-vl-utils>=0.0.14
+ultralytics>=8.3          # YOLO26 desteği
+opencv-python>=4.10
+pillow>=10.4
+
+# --- Telemetri (proje-ozeti.md §3.1 madde 2) ---
+pymavlink>=2.4
+polars>=1.0
+pysolar>=0.11
+shapely>=2.0
+
+# --- Değerlendirme (proje-ozeti.md §7) ---
+# ranx: NDCG/MRR/Recall metrikleri
+ranx>=0.3
+
+# --- Geliştirme ---
+pytest>=8.0

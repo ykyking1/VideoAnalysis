@@ -1,18 +1,31 @@
-"""LLM ayrıştırma: Qwen 14B + xgrammar (şema zorlamalı yapısal çıktı), SGLang
-üzerinde (proje-ozeti.md §3.2 madde 1) - production hedefi.
+"""LLM ayrıştırma: sorguyu yapısal filtrelere + semantik artığa ayırır
+(proje-ozeti.md §3.2 madde 1).
 
-Yerel testte (4GB VRAM) bunun yerine Ollama üzerinden küçük, quantize bir model
-(varsayılan `qwen2.5:3b`) kullanılıyor. xgrammar'ın işlevsel karşılığı olarak
-Ollama'nın JSON-schema zorlamalı `format` parametresi kullanılıyor - CFG/grammar
-düzeyinde değil ama şema zorlaması aynı amaca hizmet ediyor. Katalogda karşılığı
-olmayan kavramlar semantic_text'e düşer (model prompt'ta buna yönlendiriliyor).
+vLLM üzerinde xgrammar guided decoding ile şema zorlaması yapılır - model
+şemanın dışına gramer düzeyinde çıkamaz. Katalogda karşılığı olmayan kavramlar
+hataya değil, `semantic_text`e düşer ve embedding modeline gider.
+
+KRİTİK TASARIM NOKTASI: Belirtilmemiş alanlar `false` DEĞİL `null` olmalı.
+"deniz üzerinde tekne" sorgusunda `is_night=false` yazılırsa gece çekilmiş
+tüm klipler yapısal olarak elenir - ve bu oturumda ölçtük ki dar bir filtre
+doğru cevabı gerçekten kaybettiriyor (gerçek irtifa testinde 21 sorgunun
+17'si). Bu yüzden hem sistem promptu hem `_sanitize` bunu iki kez kontrol
+ediyor: LLM yine de `false` üretirse ve sorguda ilgili kelime geçmiyorsa
+`None`'a çevriliyor.
 """
 import json
-from dataclasses import dataclass, field
-
-import requests
+from dataclasses import asdict, dataclass, field
 
 from common import config
+from common.llm import chat_json
+
+# Sorguda bu kelimelerden hicbiri gecmiyorsa ilgili bool alan null'a cekilir.
+_NEGATION_GUARDS: dict[str, tuple[str, ...]] = {
+    "over_sea": ("deniz", "sea", "ocean", "kıyı", "kiyi", "coast", "su üstü", "karada", "land"),
+    "is_night": ("gece", "night", "karanlık", "karanlik", "dark", "gündüz", "gunduz", "day"),
+    "is_sunset": ("gün batımı", "gun batimi", "günbatımı", "gunbatimi", "sunset",
+                   "gün doğumu", "gun dogumu", "sunrise", "alacakaranlık", "twilight"),
+}
 
 
 @dataclass
@@ -23,18 +36,25 @@ class StructuredFilters:
     min_agl_m: float | None = None
     max_agl_m: float | None = None
     over_sea: bool | None = None
-    is_sunset: bool | None = None  # sun_elevation eşiğinden türetilir
+    is_sunset: bool | None = None  # sun_elevation esiginden turetilir
     is_night: bool | None = None
     min_vehicle_count: int | None = None
+
+    def active_fields(self) -> list[str]:
+        return [k for k, v in asdict(self).items() if v is not None]
+
+    def is_empty(self) -> bool:
+        return not self.active_fields()
 
 
 @dataclass
 class ParsedQuery:
     filters: StructuredFilters = field(default_factory=StructuredFilters)
     semantic_text: str = ""
+    raw_query: str = ""
 
 
-_JSON_SCHEMA = {
+JSON_SCHEMA = {
     "type": "object",
     "properties": {
         "sensor_type": {"type": ["string", "null"]},
@@ -49,45 +69,61 @@ _JSON_SCHEMA = {
         "semantic_text": {"type": "string"},
     },
     "required": ["semantic_text"],
+    "additionalProperties": False,
 }
 
-_SYSTEM_PROMPT = """Sen bir İHA video arama sorgusu ayrıştırıcısısın. Kullanıcının \
+SYSTEM_PROMPT = """Sen bir İHA video arama sorgusu ayrıştırıcısısın. Kullanıcının \
 doğal dil sorgusunu iki parçaya ayır:
 
-1. Yapısal filtreler - SADECE şu alanlar için, sorguda açıkça belirtilmişse doldur:
-   sensor_type, min_speed_kmh, max_speed_kmh, min_agl_m, max_agl_m, over_sea \
-(deniz üzerinde mi), is_sunset (gün batımı), is_night (gece), min_vehicle_count.
-   Belirtilmemiş alanları null bırak - ÖZELLİKLE over_sea/is_sunset/is_night için: \
-sorgu bu konudan hiç bahsetmiyorsa false DEĞİL, null yaz. false SADECE sorgu açıkça \
-tersini belirtiyorsa kullanılmalı (örn. "karada" -> over_sea=false, "gece değil" \
--> is_night=false). Konu hiç geçmiyorsa varsayılan olarak false yazma, null yaz.
-2. semantic_text - yapısal alanlarla karşılığı olmayan, görsel/anlamsal geri kalan \
-(örn. "TB2", "takip ediyor", "yüksek hızlarda uçan"). Yapısal alanlara taşınan \
-bilgiyi semantic_text'te TEKRARLAMA.
+1. Yapısal filtreler - SADECE şu alanlar için, sorguda AÇIKÇA belirtilmişse doldur:
+   sensor_type, min_speed_kmh, max_speed_kmh, min_agl_m, max_agl_m,
+   over_sea (deniz üzerinde mi), is_sunset (gün batımı), is_night (gece),
+   min_vehicle_count.
 
-Sadece JSON döndür, başka metin ekleme."""
+   EN ÖNEMLİ KURAL: Sorguda hiç bahsedilmeyen alanı null bırak - ASLA false yazma.
+   false SADECE kullanıcı açıkça tersini istiyorsa kullanılır:
+     "karada uçan"      -> over_sea=false
+     "gece olmayan"     -> is_night=false
+     "deniz üstünde"    -> over_sea=true
+   Sorgu konudan hiç bahsetmiyorsa (örn. "tekne ara") o alan null kalmalı.
+   Gereksiz filtre, doğru sonuçların elenmesine yol açar.
+
+2. semantic_text - yapısal alanlarda karşılığı olmayan görsel/anlamsal geri kalan
+   (örn. "TB2", "takip ediyor", "dalgalı deniz"). Yapısal alanlara taşıdığın
+   bilgiyi semantic_text içinde TEKRARLAMA.
+
+Sadece JSON döndür."""
+
+
+def _sanitize(parsed: dict, raw_query: str) -> dict:
+    """LLM şemaya uysa da anlamsal olarak hatalı `false` üretebilir - sorguda
+    ilgili kavram hiç geçmiyorsa bool alanları null'a çeker."""
+    lowered = raw_query.casefold()
+    for field_name, keywords in _NEGATION_GUARDS.items():
+        if parsed.get(field_name) is False and not any(k in lowered for k in keywords):
+            parsed[field_name] = None
+    return parsed
 
 
 def parse_query(raw_query: str) -> ParsedQuery:
-    """Doğal dil sorgusunu Ollama (varsayılan qwen2.5:3b) ile şemaya zorlanmış
-    yapısal filtrelere ve semantik metin artığına ayrıştırır."""
-    resp = requests.post(
-        f"{config.OLLAMA_HOST}/api/chat",
-        json={
-            "model": config.OLLAMA_PARSE_MODEL,
-            "messages": [
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": raw_query},
-            ],
-            "format": _JSON_SCHEMA,
-            "stream": False,
-            "options": {"temperature": 0},
-        },
-        timeout=120,
-    )
-    resp.raise_for_status()
-    parsed = json.loads(resp.json()["message"]["content"])
+    """Doğal dil sorgusunu şemaya zorlanmış yapısal filtrelere ve semantik
+    metin artığına ayrıştırır.
 
-    semantic_text = parsed.pop("semantic_text", "")
-    filters = StructuredFilters(**{k: v for k, v in parsed.items() if k in StructuredFilters.__dataclass_fields__})
-    return ParsedQuery(filters=filters, semantic_text=semantic_text)
+    LLM erişilemezse sorgunun tamamı semantic_text olarak geçer - arama
+    çalışmaya devam eder, sadece yapısal filtreler devre dışı kalır."""
+    try:
+        content = chat_json(SYSTEM_PROMPT, raw_query, JSON_SCHEMA, model=config.PARSE_MODEL)
+        parsed = json.loads(content)
+    except Exception as exc:  # noqa: BLE001 - ayristirma hatasi aramayi durdurmamali
+        return ParsedQuery(semantic_text=raw_query, raw_query=raw_query,
+                           filters=StructuredFilters())
+
+    parsed = _sanitize(parsed, raw_query)
+    semantic_text = (parsed.pop("semantic_text", "") or "").strip()
+    known = {k: v for k, v in parsed.items() if k in StructuredFilters.__dataclass_fields__}
+
+    return ParsedQuery(
+        filters=StructuredFilters(**known),
+        semantic_text=semantic_text or raw_query,
+        raw_query=raw_query,
+    )

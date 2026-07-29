@@ -25,14 +25,28 @@ NDCG@10, MRR, Recall@K — `ranx` veya `pytrec_eval` ile hesaplanabilir.
 **Not:** Kamuya açık veri "embedding modeli genel olarak iyi mi" sorusunu cevaplar;
 "bizim gerçek arşivimizde doğruluk ne" sorusunu cevaplamaz.
 
-## Format (öneri, henüz kesinleşmedi)
+## Format
+
+`scripts/eval_retrieval.py --golden <dosya>` bu formatı okur. **JSONL** —
+her satır tek bir JSON nesnesi:
 
 ```json
-{
-  "query": "gün batımında deniz üzerinde yüksek hızlarda uçan bir TB2 videosu",
-  "query_type": "exact | partial | hard_negative",
-  "relevant": [
-    {"video_id": "video1", "t_start": 130, "t_end": 192}
-  ]
-}
+{"query": "gün batımında deniz üzerinde iki tekne", "video_id": "mission_042", "t_start": 848.0, "t_end": 904.0}
+{"query": "gece kıyı şeridinde hareket eden araç", "video_id": "mission_017", "t_start": 3744.0, "t_end": 3776.0}
 ```
+
+Bir sorgunun sonucu beklenen aralıkla **en az 1 saniye örtüşüyorsa** isabet
+sayılır (`MIN_OVERLAP_S`). Rapor: Recall@1/@5/@10 + MRR + kaç sorguda filtre
+gevşetildiği.
+
+Zor-negatif sorgular (`"günbatımı"` vs `"gündoğumu"`) ayrı bir dosyada
+tutulup ayrıca çalıştırılabilir — ölçmek istediğiniz şey "yanlış olanı
+getirmiyor mu" olduğu için doğru cevabın olmadığı sorgular aynı Recall
+tablosuna karıştırılmamalı.
+
+## Örneklem büyüklüğü uyarısı
+
+Bu projede N=21'lik bir ölçekte **tek bir klibin sıra değiştirmesinin Recall'ü
+~5 puan oynattığını** ölçtük. §7'nin 200-500 sorgu önerisi bu yüzden — altındaki
+örneklemlerde çıkan farkları "model A, B'den iyi" diye yorumlamayın.
+`eval_retrieval.py` N<200 olduğunda bu uyarıyı otomatik basar.

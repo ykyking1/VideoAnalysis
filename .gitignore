@@ -8,3 +8,9 @@ venv/
 poc/golden_set/data/
 /data/
 /models/
+
+# YOLO agirlik dosyalari (calisma aninda otomatik indirilir)
+*.pt
+
+# Ortam dosyasi
+.env

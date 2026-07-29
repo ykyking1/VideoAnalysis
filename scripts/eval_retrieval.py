@@ -1,84 +1,161 @@
-"""Başarı oranı ölçümü: kendi caption'ına geri dönüş testi (self-retrieval).
+"""Golden set üzerinde retrieval başarımı ölçer (proje-ozeti.md §7).
 
-Golden set (proje-ozeti.md §7) henüz yok - bu, etiketsiz bir proxy metrik:
-her klip için moondream'in ürettiği caption'ı sorgu olarak kullanıp, embedding
-modelinin doğru klibi (kendi caption'ının kaynağı) korpusun geri kalanı
-arasından top-K'da bulup bulamadığını ölçer.
+İki mod:
 
-ZAYIF PROXY UYARISI: Bu, "model kendi ürettiği açıklamayı tanıyor mu" sorusunu
-cevaplar - "kullanıcının doğal dil sorgusunu doğru anlıyor mu" sorusunu DEĞİL.
-Gerçek golden set (§7: tam eşleşme/kısmi eşleşme/zor-negatif üçlü tasarım)
-olmadan bu sayı model seçimi kararına (§5) temel oluşturmamalı, sadece
-mekanik/kaba bir sağlık sinyali olarak kullanılmalı.
+1) --golden <dosya.jsonl>  (ASIL YÖNTEM, §7'nin gerektirdiği)
+   Her satır: {"query": "...", "video_id": "...", "t_start": 12.0, "t_end": 40.0}
+   Sorgu tam hattan (LLM ayrıştırma + hibrit arama + aralık birleştirme)
+   geçirilir; beklenen aralıkla ZAMAN ÖRTÜŞMESİ olan bir sonuç bulunursa
+   isabet sayılır. Recall@1/@5/@10 ve MRR raporlanır.
 
-Kullanım: python scripts/eval_retrieval.py
+2) --self-retrieval  (ZAYIF PROXY, golden set yokken sağlık sinyali)
+   Caption'lı kliplerin kendi caption'ını sorgu olarak kullanır. "Model kendi
+   ürettiği açıklamayı tanıyor mu" sorusunu cevaplar - "kullanıcının doğal dil
+   sorgusunu doğru anlıyor mu" sorusunu DEĞİL. Model seçimi kararına (§5)
+   temel oluşturmamalı.
+
+ÖRNEKLEM UYARISI: Bu projede N=21'lik bir ölçekte tek bir kliplik kaymanın
+Recall'ü ~5 puan oynattığını ölçtük. §7 200-500 sorgu öneriyor - altındaki
+örneklemlerde çıkan farkları "model A, B'den iyi" diye yorumlamayın.
+
+Kullanım:
+    python -m scripts.eval_retrieval --golden poc/golden_set/queries.jsonl
+    python -m scripts.eval_retrieval --self-retrieval
 """
-import clickhouse_connect
+import argparse
+import json
+import sys
+from pathlib import Path
 
 from common import config
+from common.qdrant_store import get_client
 from ingest.activities.clip_embedding import embed_text
+from query.pipeline import run_query
 
-TOP_K = 5
+sys.stdout.reconfigure(encoding="utf-8")
 
-
-def _get_client():
-    return clickhouse_connect.get_client(
-        host=config.CLICKHOUSE_HOST, port=config.CLICKHOUSE_PORT,
-        username=config.CLICKHOUSE_USER, password=config.CLICKHOUSE_PASSWORD,
-        database=config.CLICKHOUSE_DB,
-    )
+RECALL_LEVELS = (1, 5, 10)
+MIN_OVERLAP_S = 1.0
 
 
-def evaluate() -> None:
-    client = _get_client()
+def _overlaps(a_start: float, a_end: float, b_start: float, b_end: float) -> bool:
+    return min(a_end, b_end) - max(a_start, b_start) >= MIN_OVERLAP_S
 
-    captioned = client.query(
-        "SELECT video_id, t_start, t_end, caption FROM clips WHERE caption != ''"
-    ).result_rows
-    total_clips = client.query("SELECT count() FROM clips").result_rows[0][0]
+
+def evaluate_golden(path: Path, top_k: int) -> int:
+    if not path.exists():
+        print(f"Golden set bulunamadi: {path}")
+        print("Bkz. poc/golden_set/README.md - format ve tasarim rehberi orada.")
+        return 1
+
+    cases = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not cases:
+        print(f"{path} bos")
+        return 1
+
+    hits = {k: 0 for k in RECALL_LEVELS}
+    reciprocal_ranks: list[float] = []
+    relaxed_count = 0
+
+    for case in cases:
+        response = run_query(case["query"], top_k=top_k)
+        if response.was_relaxed:
+            relaxed_count += 1
+
+        rank = None
+        for i, interval in enumerate(response.intervals, start=1):
+            if interval.video_id != case["video_id"]:
+                continue
+            if _overlaps(interval.t_start, interval.t_end,
+                          float(case["t_start"]), float(case["t_end"])):
+                rank = i
+                break
+
+        if rank is None:
+            reciprocal_ranks.append(0.0)
+            continue
+        reciprocal_ranks.append(1.0 / rank)
+        for k in RECALL_LEVELS:
+            if rank <= k:
+                hits[k] += 1
+
+    n = len(cases)
+    print(f"--- Golden set sonuclari ({path.name}) ---")
+    print(f"Sorgu sayisi: {n}")
+    for k in RECALL_LEVELS:
+        print(f"Recall@{k}: {hits[k]}/{n} ({100 * hits[k] / n:.1f}%)")
+    print(f"MRR      : {sum(reciprocal_ranks) / n:.3f}")
+    print(f"Filtre gevsetilen sorgu: {relaxed_count}/{n}")
+
+    if n < 200:
+        print(f"\nUYARI: proje-ozeti.md §7 200-500 sorgu oneriyor, elinizde {n} var. "
+              f"\nBu orneklemde tek bir sorgunun kaymasi Recall'u ~{100/n:.1f} puan oynatir - "
+              f"\nmodel/strateji karsilastirmasi icin yetersiz.")
+    return 0
+
+
+def evaluate_self_retrieval(top_k: int) -> int:
+    client = get_client()
+    collection = config.QDRANT_COLLECTION
+
+    captioned = []
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            collection_name=collection, limit=256, offset=offset,
+            with_payload=True, with_vectors=False,
+        )
+        captioned += [p.payload for p in points if (p.payload or {}).get("caption")]
+        if offset is None:
+            break
 
     if not captioned:
-        print("Değerlendirilecek caption bulunamadı (henüz hiç klip caption'lanmamış).")
-        return
+        print("Caption'li klip bulunamadi - once caption'li ingest calistirin.")
+        return 1
 
-    hits_at_1 = 0
-    hits_at_k = 0
-    ranks = []
+    from qdrant_client.http import models as qm
 
-    for video_id, t_start, t_end, caption in captioned:
-        query_embedding = embed_text(caption)
-        result = client.query(
-            """
-            SELECT video_id, t_start, t_end,
-                   cosineDistance(embedding, {query_embedding:Array(Float32)}) AS dist
-            FROM clips
-            ORDER BY dist ASC
-            LIMIT {top_k:UInt32}
-            """,
-            parameters={"query_embedding": query_embedding, "top_k": max(TOP_K, total_clips)},
-        ).result_rows
-
-        rank = next(
-            (i for i, row in enumerate(result, start=1)
-             if row[0] == video_id and row[1] == t_start and row[2] == t_end),
-            None,
+    hits = {k: 0 for k in RECALL_LEVELS}
+    for payload in captioned:
+        vector = embed_text(payload["caption"])
+        result = client.query_points(
+            collection_name=collection, query=vector,
+            limit=max(RECALL_LEVELS), with_payload=True,
+            search_params=qm.SearchParams(hnsw_ef=config.QDRANT_SEARCH_HNSW_EF),
         )
-        if rank is not None:
-            ranks.append(rank)
-            if rank == 1:
-                hits_at_1 += 1
-            if rank <= TOP_K:
-                hits_at_k += 1
+        for i, point in enumerate(result.points, start=1):
+            got = point.payload or {}
+            if (got.get("video_id") == payload["video_id"]
+                    and abs(float(got.get("t_start", -1)) - float(payload["t_start"])) < 1e-3):
+                for k in RECALL_LEVELS:
+                    if i <= k:
+                        hits[k] += 1
+                break
 
     n = len(captioned)
-    print("--- Başarı oranı (self-retrieval proxy) ---")
-    print(f"Değerlendirilen caption sayısı: {n} / toplam klip: {total_clips}")
-    print(f"Recall@1: {hits_at_1}/{n} ({100 * hits_at_1 / n:.1f}%)")
-    print(f"Recall@{TOP_K}: {hits_at_k}/{n} ({100 * hits_at_k / n:.1f}%)")
-    if ranks:
-        print(f"Ortalama sıra: {sum(ranks) / len(ranks):.1f}")
-    print("UYARI: Bu bir golden-set metriği değil, zayıf bir proxy'dir - bkz. dosya docstring'i.")
+    print("--- Self-retrieval (ZAYIF PROXY) ---")
+    print(f"Degerlendirilen caption: {n}")
+    for k in RECALL_LEVELS:
+        print(f"Recall@{k}: {hits[k]}/{n} ({100 * hits[k] / n:.1f}%)")
+    print("\nUYARI: Bu bir golden-set metrigi DEGIL. Model secimi (§5) kararina "
+          "\ntemel olusturmamali - bkz. dosya docstring'i.")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--golden", type=Path, help="JSONL golden set dosyasi")
+    ap.add_argument("--self-retrieval", action="store_true")
+    ap.add_argument("--top-k", type=int, default=10)
+    args = ap.parse_args()
+
+    if args.golden:
+        return evaluate_golden(args.golden, args.top_k)
+    if args.self_retrieval:
+        return evaluate_self_retrieval(args.top_k)
+    ap.print_help()
+    return 1
 
 
 if __name__ == "__main__":
-    evaluate()
+    sys.exit(main())

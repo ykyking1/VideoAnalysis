@@ -13,7 +13,7 @@ def get_client() -> Minio:
         config.MINIO_ENDPOINT,
         access_key=config.MINIO_ROOT_USER,
         secret_key=config.MINIO_ROOT_PASSWORD,
-        secure=False,
+        secure=config.MINIO_SECURE,
     )
 
 

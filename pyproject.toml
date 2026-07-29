@@ -1,31 +1,45 @@
 [project]
 name = "iha-video-search"
-version = "0.1.0"
+version = "1.0.0"
 description = "İHA video arşivinde doğal dil ile semantik arama (video kimliği + zaman aralığı)"
 requires-python = ">=3.11"
 dependencies = [
-    # Şu an kullanılıyor (yerel test ortamı, bkz. README.md "Yerel test ortamı")
-    "temporalio",
-    "minio",
-    "requests",
-    "numpy",
-    "clickhouse-connect",
-    "psycopg[binary]",
-    "torch",             # --index-url https://download.pytorch.org/whl/cu126 ile kurun (GPU)
-    "transformers",      # clip_embedding.py: microsoft/xclip-base-patch32
-    "opencv-python",     # frame örnekleme
-    "ultralytics",       # visual_fields.py: yolov8n (YOLO26 yerine yer tutucu)
+    "numpy>=1.26,<3",
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+    "minio>=7.2",
+    "qdrant-client>=1.12",
+    "psycopg[binary]>=3.1",
+    "temporalio>=1.7",
+    "confluent-kafka>=2.5",
+    # torch GPU icin ayrica: --index-url https://download.pytorch.org/whl/cu126
+    "torch>=2.4",
+    "torchvision>=0.19",
+    "transformers>=4.57",
+    "accelerate>=0.34",
+    "huggingface-hub>=0.25",
+    "qwen-vl-utils>=0.0.14",
+    "ultralytics>=8.3",
+    "opencv-python>=4.10",
+    "pillow>=10.4",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest"]
-# Gerçek İHA telemetrisi olduğunda (proje-ozeti.md §3.1 madde 2)
-telemetry = ["pymavlink", "polars", "astral", "pysolar", "shapely", "geopandas"]
-# Production hedefi (proje-ozeti.md §10) - GT1030 4GB'a sığmadığı için yerel
-# testte Ollama ile değiştirildi (bkz. CLAUDE.md), model seçimi de kesinleşmedi (§5)
-production = ["confluent-kafka", "vllm", "sglang", "xgrammar"]
-# Adım 0 doğrulama (proje-ozeti.md §7, §11)
-eval = ["ranx", "fiftyone"]
+# Gercek MAVLink telemetrisi + cografi hesaplar (proje-ozeti.md §3.1 madde 2)
+telemetry = ["pymavlink>=2.4", "polars>=1.0", "pysolar>=0.11", "shapely>=2.0"]
+# Sorgu ayristirma / caption / rerank sunucusu - Linux gerektirir
+serving = ["vllm>=0.6", "xgrammar>=0.1"]
+# Golden set degerlendirme (proje-ozeti.md §7)
+eval = ["ranx>=0.3"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+iha-init = "scripts.init_storage:main"
+iha-query = "scripts.query_cli:main"
+iha-ingest = "scripts.ingest_video:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.setuptools]
+packages = ["common", "ingest", "ingest.activities", "query", "scripts"]

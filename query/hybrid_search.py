@@ -1,112 +1,124 @@
-"""Hibrit arama: ClickHouse tek sorguda skip index'lerle filtre + küçültülmüş
-kümede vektör karşılaştırması (proje-ozeti.md §3.2 madde 2).
+"""Hibrit arama: yapısal filtre + semantik vektör, tek Qdrant sorgusunda
+(proje-ozeti.md §3.2 madde 2).
 
-HNSW (`vector_similarity`) indeksi artık kurulu (bkz. schema/clickhouse_clips.sql,
-schema/clips_videoclip_xl.sql - ClickHouse 25.8+'da GA, deneysel flag gerekmiyor,
-canlı instance'ta doğrulandı: 26.7.1). Sorgu şekli DEĞİŞMEDİ - `ORDER BY
-cosineDistance(...) LIMIT k` deseni ClickHouse'un query planner'ı tarafından
-otomatik olarak indeksten hızlandırılıyor (EXPLAIN ile doğrulandı, kod
-tarafında ekstra bir şey yapmaya gerek yok).
+Qdrant filtreyi HNSW graf gezinmesinin İÇİNDE uyguluyor - ClickHouse'taki
+"prefilter (tam ama indekssiz/yavaş) vs postfilter (hızlı ama eksik)" ikilemi
+burada yok. Ölçtük: 100K korpusta varsayılan filtreli-HNSW, `exact=True`
+brute-force ile 21 sorgunun 21'inde birebir aynı top-3'ü verdi ve ~1.5x daha
+hızlıydı. Detay: docs/worklog_2026-07-28.md.
 
-ÖNEMLİ NÜANS: WHERE filtresi + vektör ORDER BY birlikte kullanıldığında
-ClickHouse'un kendi `vector_search_filter_strategy` ayarı devreye giriyor -
-'postfilter' (varsayılan) önce ANN indeksten en yakın komşuları bulup SONRA
-filtreyi uyguluyor (LIMIT'ten az sonuç dönebilir), 'prefilter' önce filtreyi
-uygulayıp SONRA brute-force arama yapıyor (ANN hızlanması kaybolur ama sonuç
-tam). Şu an TELEMETRY_FILTERS_ENABLED=False olduğu için bu ayrım pratikte
-devreye girmiyor; gerçek telemetri eklenip filtreler aktif olunca hangi
-stratejinin daha iyi çalıştığı ölçülmeli, şimdilik ClickHouse varsayılanı
-('auto'/postfilter) kullanılıyor.
-
-sun_elevation eşikleri kaba yaklaşımlardır (gerçek astral hesaplama olmadığı
-için): is_sunset ~ -6°..6°, is_night ~ < -6°.
-
-TELEMETRY_FILTERS_ENABLED = False: kullanıcı isteğiyle (bkz. proje notu - "telemetri
-kısmı yok, sadece embedding modelinin başarısına bakacağız") mevcut test korpusunda
-avg_speed_kmh/agl_m/sun_elevation/over_sea hep NULL, vehicle_count hep 0 (YOLO
-atlandı). LLM sorguda "deniz üzerinde"/"gece" gibi bir kavram gördüğünde bu alanlara
-True/False atayabiliyor, ama filtre olarak uygulanırsa NULL/0 verilerle karşılaştığı
-için (yön fark etmeksizin) sıfır sonuç dönüyor ve iyi bir semantik eşleşmeyi bile
-gizliyor. Gerçek telemetri eklenince bu bayrak True yapılmalı.
+FİLTRE GEVŞETME: Hard filtre sonucu SEARCH_MIN_RESULTS'ın altına düşerse
+filtre kademeli gevşetilir (bkz. query/filter_builder.py). Gevşetilmiş
+sonuçlar `exact_filter_match=False` ile işaretlenir - kullanıcı hangi
+sonucun filtreye tam uyduğunu, hangisinin "yakın eşleşme" olduğunu görür.
 """
-import clickhouse_connect
+from dataclasses import dataclass, field
+
+from qdrant_client.http import models as qm
 
 from common import config
+from common.qdrant_store import get_client, search as qdrant_search
 from ingest.activities.clip_embedding import embed_text
-from query.interval_merge import Match
+from query.filter_builder import build_filter, describe, relaxation_ladder
 from query.llm_parser import ParsedQuery
 
-SUNSET_ELEVATION_RANGE = (-6.0, 6.0)
-NIGHT_ELEVATION_MAX = -6.0
-TELEMETRY_FILTERS_ENABLED = False
+
+@dataclass(frozen=True)
+class Match:
+    video_id: str
+    t_start: float
+    t_end: float
+    score: float = 0.0
+    caption: str = ""
+    exact_filter_match: bool = True
 
 
-def _get_client():
-    return clickhouse_connect.get_client(
-        host=config.CLICKHOUSE_HOST, port=config.CLICKHOUSE_PORT,
-        username=config.CLICKHOUSE_USER, password=config.CLICKHOUSE_PASSWORD,
-        database=config.CLICKHOUSE_DB,
+@dataclass
+class SearchResult:
+    matches: list[Match] = field(default_factory=list)
+    relaxed_fields: list[str] = field(default_factory=list)
+    filter_description: str = ""
+
+    @property
+    def was_relaxed(self) -> bool:
+        return bool(self.relaxed_fields)
+
+
+def _to_match(point: qm.ScoredPoint, exact: bool) -> Match:
+    payload = point.payload or {}
+    return Match(
+        video_id=payload.get("video_id", ""),
+        t_start=float(payload.get("t_start", 0.0)),
+        t_end=float(payload.get("t_end", 0.0)),
+        score=float(point.score),
+        caption=payload.get("caption", "") or "",
+        exact_filter_match=exact,
     )
 
 
-def _build_where(filters) -> tuple[str, dict]:
-    clauses = []
-    params: dict = {}
+def search(parsed: ParsedQuery, top_k: int | None = None,
+            min_results: int | None = None) -> SearchResult:
+    """Yapısal filtre + semantik vektör araması, gerekirse gevşetmeli.
 
-    if filters.sensor_type is not None:
-        clauses.append("sensor_type = {sensor_type:String}")
-        params["sensor_type"] = filters.sensor_type
+    Semantic_text boşsa (sorgu tamamen yapısalsa) vektör araması yerine
+    filtreye uyan kayıtlar zaman sırasıyla döner."""
+    top_k = top_k or config.SEARCH_TOP_K
+    min_results = min_results if min_results is not None else config.SEARCH_MIN_RESULTS
 
-    if TELEMETRY_FILTERS_ENABLED:
-        if filters.min_speed_kmh is not None:
-            clauses.append("avg_speed_kmh >= {min_speed_kmh:Float32}")
-            params["min_speed_kmh"] = filters.min_speed_kmh
-        if filters.max_speed_kmh is not None:
-            clauses.append("avg_speed_kmh <= {max_speed_kmh:Float32}")
-            params["max_speed_kmh"] = filters.max_speed_kmh
-        if filters.min_agl_m is not None:
-            clauses.append("agl_m >= {min_agl_m:Float32}")
-            params["min_agl_m"] = filters.min_agl_m
-        if filters.max_agl_m is not None:
-            clauses.append("agl_m <= {max_agl_m:Float32}")
-            params["max_agl_m"] = filters.max_agl_m
-        if filters.over_sea:
-            clauses.append("over_sea = true")
-        if filters.is_sunset:
-            clauses.append("sun_elevation BETWEEN {sunset_lo:Float32} AND {sunset_hi:Float32}")
-            params["sunset_lo"], params["sunset_hi"] = SUNSET_ELEVATION_RANGE
-        if filters.is_night:
-            clauses.append("sun_elevation < {night_max:Float32}")
-            params["night_max"] = NIGHT_ELEVATION_MAX
-        if filters.min_vehicle_count is not None:
-            clauses.append("vehicle_count >= {min_vehicle_count:UInt16}")
-            params["min_vehicle_count"] = filters.min_vehicle_count
+    client = get_client()
+    collection = config.QDRANT_COLLECTION
 
-    where = " AND ".join(clauses) if clauses else "1"
-    return where, params
+    if not parsed.semantic_text.strip():
+        return _structural_only_search(client, collection, parsed, top_k)
 
+    query_vector = embed_text(parsed.semantic_text)
+    ladder = relaxation_ladder(parsed.filters)
 
-def search(parsed: ParsedQuery, top_k: int = 20) -> list[Match]:
-    """ParsedQuery.filters'ı WHERE koşullarına, semantic_text'i embedding modeline
-    çevirip ClickHouse `clips` tablosunda hibrit sorgu çalıştırır."""
-    client = _get_client()
-    where, params = _build_where(parsed.filters)
+    seen: set[tuple[str, float]] = set()
+    matches: list[Match] = []
+    relaxed_fields: list[str] = []
 
-    if parsed.semantic_text.strip():
-        query_embedding = embed_text(parsed.semantic_text)
-        params["query_embedding"] = query_embedding
-        order_by = "cosineDistance(embedding, {query_embedding:Array(Float32)}) ASC"
-    else:
-        order_by = "t_start ASC"
+    for filters, dropped in ladder:
+        points = qdrant_search(client, collection, query_vector,
+                                build_filter(filters), top_k)
+        for point in points:
+            match = _to_match(point, exact=not dropped)
+            key = (match.video_id, match.t_start)
+            if key in seen:
+                continue
+            seen.add(key)
+            matches.append(match)
 
-    result = client.query(
-        f"""
-        SELECT video_id, t_start, t_end
-        FROM clips
-        WHERE {where}
-        ORDER BY {order_by}
-        LIMIT {{top_k:UInt32}}
-        """,
-        parameters={**params, "top_k": top_k},
+        if len(matches) >= min_results:
+            relaxed_fields = dropped
+            break
+        relaxed_fields = dropped
+
+    return SearchResult(
+        matches=matches[:top_k],
+        relaxed_fields=relaxed_fields,
+        filter_description=describe(parsed.filters),
     )
-    return [Match(video_id=row[0], t_start=row[1], t_end=row[2]) for row in result.result_rows]
+
+
+def _structural_only_search(client, collection: str, parsed: ParsedQuery,
+                             top_k: int) -> SearchResult:
+    """Semantik metin yoksa saf yapısal tarama (vektör araması anlamsız)."""
+    points, _ = client.scroll(
+        collection_name=collection,
+        scroll_filter=build_filter(parsed.filters),
+        limit=top_k,
+        with_payload=True,
+        with_vectors=False,
+    )
+    matches = [
+        Match(
+            video_id=(p.payload or {}).get("video_id", ""),
+            t_start=float((p.payload or {}).get("t_start", 0.0)),
+            t_end=float((p.payload or {}).get("t_end", 0.0)),
+            caption=(p.payload or {}).get("caption", "") or "",
+        )
+        for p in points
+    ]
+    matches.sort(key=lambda m: (m.video_id, m.t_start))
+    return SearchResult(matches=matches, filter_description=describe(parsed.filters))
