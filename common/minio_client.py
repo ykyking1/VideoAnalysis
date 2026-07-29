@@ -100,8 +100,29 @@ def download_temp(bucket: str, object_key: str):
         yield local_path
 
 
+class StorageUnavailable(RuntimeError):
+    pass
+
+
 def ensure_buckets() -> None:
+    """Bucket'ları (veya dizinleri) hazırlar.
+
+    MinIO'ya ulaşılamadığında urllib3'ün 40 satırlık yeniden-deneme yığını
+    asıl sorunu gizliyor - burada anlaşılır bir mesaja çeviriyoruz."""
     client = get_client()
-    for bucket in (config.MINIO_BUCKET_RAW, config.MINIO_BUCKET_PROXY):
-        if not client.bucket_exists(bucket):
-            client.make_bucket(bucket)
+    try:
+        for bucket in (config.MINIO_BUCKET_RAW, config.MINIO_BUCKET_PROXY):
+            if not client.bucket_exists(bucket):
+                client.make_bucket(bucket)
+    except Exception as exc:  # noqa: BLE001
+        if config.LOCAL_STORAGE_PATH:
+            raise StorageUnavailable(
+                f"Yerel depo dizini kullanilamiyor ({config.LOCAL_STORAGE_PATH}): {exc}"
+            ) from exc
+        raise StorageUnavailable(
+            f"MinIO'ya ulasilamiyor ({config.MINIO_ENDPOINT}).\n"
+            f"  - Docker calisiyorsa: docker compose up -d minio\n"
+            f"  - Docker YOKSA (Colab/Kaggle) MinIO'ya gerek yok, yerel dizin kullanin:\n"
+            f"        export LOCAL_STORAGE_PATH=/content/storage\n"
+            f"  Ayrinti: {exc}"
+        ) from exc
