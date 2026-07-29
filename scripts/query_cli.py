@@ -10,7 +10,9 @@ import sys
 
 from query.pipeline import run_query
 
-sys.stdout.reconfigure(encoding="utf-8")
+from common.console import use_utf8_stdout
+
+use_utf8_stdout()
 
 
 def format_timestamp(seconds: float) -> str:

@@ -27,12 +27,13 @@ import json
 import sys
 from pathlib import Path
 
+from common.console import use_utf8_stdout
 from common import config
 from common.qdrant_store import get_client
 from ingest.activities.clip_embedding import embed_text
 from query.pipeline import run_query
 
-sys.stdout.reconfigure(encoding="utf-8")
+use_utf8_stdout()
 
 RECALL_LEVELS = (1, 5, 10)
 MIN_OVERLAP_S = 1.0

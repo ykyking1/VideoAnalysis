@@ -21,7 +21,9 @@ import shutil
 import subprocess
 import sys
 
-sys.stdout.reconfigure(encoding="utf-8")
+from common.console import use_utf8_stdout
+
+use_utf8_stdout()
 
 OK, WARN, FAIL = "OK  ", "UYARI", "HATA "
 _results: list[tuple[str, str]] = []

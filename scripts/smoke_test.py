@@ -28,6 +28,7 @@ import sys
 
 import numpy as np
 
+from common.console import use_utf8_stdout
 from common import config
 from common.qdrant_store import ClipPayload, ensure_collection, get_client, upsert_clips
 from query.filter_builder import build_filter, relaxation_ladder
@@ -36,7 +37,7 @@ from query.interval_merge import merge_matches
 from query.llm_parser import StructuredFilters
 from common.qdrant_store import search as qdrant_search
 
-sys.stdout.reconfigure(encoding="utf-8")
+use_utf8_stdout()
 
 EMBEDDINGS_PATH = pathlib.Path(__file__).parent.parent / "data" / "qwen3vl_real_embeddings.npz"
 WINDOW_S = 8.0
