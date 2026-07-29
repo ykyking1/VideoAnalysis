@@ -20,6 +20,10 @@ from pathlib import Path
 from common import config
 
 
+class StorageUnavailable(RuntimeError):
+    """Nesne deposuna ulasilamadi - mesaj ne yapilmasi gerektigini soyler."""
+
+
 @dataclass
 class _Bucket:
     """minio'nun list_buckets() dönüşüyle uyumlu asgari nesne."""
@@ -74,7 +78,18 @@ def get_client():
     if config.LOCAL_STORAGE_PATH:
         return LocalFilesystemStorage(config.LOCAL_STORAGE_PATH)
 
-    from minio import Minio
+    try:
+        from minio import Minio
+    except ImportError as exc:
+        raise StorageUnavailable(
+            "minio paketi kurulu degil ve LOCAL_STORAGE_PATH da tanimli degil.\n"
+            "  - Docker'li ortamda:  pip install minio\n"
+            "  - Docker'siz (Colab/Kaggle):  export LOCAL_STORAGE_PATH=/content/storage\n"
+            "\nDIKKAT: LOCAL_STORAGE_PATH'i ayarladiysaniz ama bu hatayi hala\n"
+            "aliyorsaniz, common.config ortam degiskeni ayarlanmadan ONCE import\n"
+            "edilmis olabilir (config env'i import aninda okuyor). Notebook'ta:\n"
+            "  importlib.reload(sys.modules['common.config'])"
+        ) from exc
 
     return Minio(
         config.MINIO_ENDPOINT,
@@ -98,10 +113,6 @@ def download_temp(bucket: str, object_key: str):
         local_path = str(Path(tmp) / Path(object_key).name)
         get_client().fget_object(bucket, object_key, local_path)
         yield local_path
-
-
-class StorageUnavailable(RuntimeError):
-    pass
 
 
 def ensure_buckets() -> None:
