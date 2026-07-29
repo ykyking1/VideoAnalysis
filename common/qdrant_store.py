@@ -73,24 +73,68 @@ def point_id(video_id: str, t_start: float) -> str:
     return str(uuid.uuid5(_NAMESPACE, f"{video_id}:{t_start:.3f}"))
 
 
+_client: QdrantClient | None = None
+_client_key: tuple | None = None
+
+
+def _current_key() -> tuple:
+    return (config.QDRANT_LOCAL_PATH, config.QDRANT_HOST, config.QDRANT_PORT,
+            config.QDRANT_GRPC_PORT, config.QDRANT_PREFER_GRPC)
+
+
 def get_client() -> QdrantClient:
     """QDRANT_LOCAL_PATH tanimliysa Docker'siz gomulu mod, aksi halde sunucu.
+
+    ISTEMCI ONBELLEKLENIR. Gomulu mod bir dosya kilidi kullaniyor: ayni
+    dizine ikinci bir istemci acmak "Storage folder is already accessed by
+    another instance" hatasi veriyor (olculdu). Pipeline icinde write_clips
+    ve search ayri ayri istemci istedigi icin, onbellek olmadan tek surecte
+    (notebook, --local ingest) cakisma kaciniLmaz olurdu.
+
+    Onbellek yapilandirmaya gore anahtarlanir - config reload edilip yol
+    degisirse yeni istemci acilir (notebook'ta ortam degiskeni degistirmek
+    bu yuzden guvenli).
 
     Gomulu mod (Colab/Kaggle icin) qdrant-client'in saf Python
     implementasyonudur: gercek Rust HNSW motorunu KULLANMAZ, tam (exact)
     arama yapar. Islevsel testler gecerli - hatta Recall daha yuksek cikar
     cunku yaklasiklik yok - ama GECIKME OLCUMLERI ANLAMSIZDIR ve buyuk
     korpusta kullanilamaz."""
+    global _client, _client_key
+
+    key = _current_key()
+    if _client is not None and _client_key == key:
+        return _client
+
+    if _client is not None:
+        try:
+            _client.close()
+        except Exception:  # noqa: BLE001 - kapanis hatasi yeni istemciyi engellemesin
+            pass
+
     if config.QDRANT_LOCAL_PATH:
-        return QdrantClient(path=config.QDRANT_LOCAL_PATH)
-    return QdrantClient(
-        host=config.QDRANT_HOST,
-        port=config.QDRANT_PORT,
-        grpc_port=config.QDRANT_GRPC_PORT,
-        prefer_grpc=config.QDRANT_PREFER_GRPC,
-        api_key=config.QDRANT_API_KEY,
-        timeout=config.QDRANT_TIMEOUT_S,
-    )
+        _client = QdrantClient(path=config.QDRANT_LOCAL_PATH)
+    else:
+        _client = QdrantClient(
+            host=config.QDRANT_HOST,
+            port=config.QDRANT_PORT,
+            grpc_port=config.QDRANT_GRPC_PORT,
+            prefer_grpc=config.QDRANT_PREFER_GRPC,
+            api_key=config.QDRANT_API_KEY,
+            timeout=config.QDRANT_TIMEOUT_S,
+        )
+    _client_key = key
+    return _client
+
+
+def close_client() -> None:
+    """Onbellekteki istemciyi kapatir (gomulu modda dosya kilidini birakir)."""
+    global _client, _client_key
+    if _client is not None:
+        try:
+            _client.close()
+        finally:
+            _client, _client_key = None, None
 
 
 def _quantization_config():
