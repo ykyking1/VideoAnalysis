@@ -12,6 +12,7 @@ filtre kademeli gevşetilir (bkz. query/filter_builder.py). Gevşetilmiş
 sonuçlar `exact_filter_match=False` ile işaretlenir - kullanıcı hangi
 sonucun filtreye tam uyduğunu, hangisinin "yakın eşleşme" olduğunu görür.
 """
+import time
 from dataclasses import dataclass, field
 
 from qdrant_client.http import models as qm
@@ -38,6 +39,11 @@ class SearchResult:
     matches: list[Match] = field(default_factory=list)
     relaxed_fields: list[str] = field(default_factory=list)
     filter_description: str = ""
+    # Gecikme kirilimi (ms). proje-ozeti.md §8'in 300ms tahmini hic
+    # olculmedi - bu alanlar onu gercek veriyle degistirmek icin.
+    embed_ms: float = 0.0
+    qdrant_ms: float = 0.0
+    ladder_steps: int = 1
 
     @property
     def was_relaxed(self) -> bool:
@@ -71,16 +77,24 @@ def search(parsed: ParsedQuery, top_k: int | None = None,
     if not parsed.semantic_text.strip():
         return _structural_only_search(client, collection, parsed, top_k)
 
+    embed_started = time.perf_counter()
     query_vector = embed_text(parsed.semantic_text)
-    ladder = relaxation_ladder(parsed.filters)
+    embed_ms = (time.perf_counter() - embed_started) * 1000
 
+    ladder = relaxation_ladder(parsed.filters)
     seen: set[tuple[str, float]] = set()
     matches: list[Match] = []
     relaxed_fields: list[str] = []
+    qdrant_ms = 0.0
+    steps = 0
 
     for filters, dropped in ladder:
+        steps += 1
+        step_started = time.perf_counter()
         points = qdrant_search(client, collection, query_vector,
                                 build_filter(filters), top_k)
+        qdrant_ms += (time.perf_counter() - step_started) * 1000
+
         for point in points:
             match = _to_match(point, exact=not dropped)
             key = (match.video_id, match.t_start)
@@ -98,6 +112,9 @@ def search(parsed: ParsedQuery, top_k: int | None = None,
         matches=matches[:top_k],
         relaxed_fields=relaxed_fields,
         filter_description=describe(parsed.filters),
+        embed_ms=embed_ms,
+        qdrant_ms=qdrant_ms,
+        ladder_steps=steps,
     )
 
 

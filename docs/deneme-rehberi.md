@@ -291,7 +291,29 @@ Sonuç listesine değil, şu üçüne:
    yazınca `is_night=true` mi çıkıyor, yoksa alakasız alan mı doluyor?
    **Bu hat hiç test edilmedi, ilk gerçek sınavı burada.**
 
-Gecikmeye de bakın (`(NNNNms)`): §8'in 300ms tahmini hiç ölçülmedi.
+### Gecikme kırılımı — "vLLM ne kadar yavaşlatıyor" sorusunun cevabı
+
+Her sorgudan sonra basılan satır:
+
+```
+1 aralik (5649ms)
+  gecikme: parse=17ms embed=5533ms qdrant=25ms merge=0ms
+```
+
+| Alan | Ne | Ölçekle büyür mü |
+|---|---|---|
+| `parse` | vLLM'in yapısal/semantik ayrımı — **sorgu başına tek çağrı** | Hayır, sabit |
+| `embed` | Sorgu metninin vektöre çevrilmesi | Hayır, sabit |
+| `qdrant` | Filtreli HNSW; gevşetme olursa her adım eklenir | **Evet** |
+| `rerank` | Aday başına bir VLM çağrısı (varsayılan kapalı) | Aday sayısıyla |
+
+**vLLM'siz koşup `parse` değerini not edin, sonra vLLM'i açıp tekrar bakın** —
+aradaki fark yapısal ayrıştırmanın gerçek maliyeti. §8'in 300ms tahmini hiç
+ölçülmedi; bu kırılım onu gerçek veriyle değiştirmek için var.
+
+Yukarıdaki örnek bu depodan (GT1030, CPU torch, vLLM kapalı): `qdrant=25ms`
+ile arama katmanı hızlı, `embed=5533ms` CPU olduğu için baskın. GPU'da embed
+düşecek ve `parse` görünür hale gelecek.
 
 ---
 

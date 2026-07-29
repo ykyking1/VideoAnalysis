@@ -33,7 +33,11 @@ def render(response) -> None:
         print("  sonuclar asagida [yaklasik] olarak isaretli.")
 
     print(f"\n{len(response.intervals)} aralik ({response.elapsed_ms:.0f}ms"
-          f"{', rerank uygulandi' if response.reranked else ''}):\n")
+          f"{', rerank uygulandi' if response.reranked else ''})")
+    # Kirilim: "vLLM ayristirma ne kadar yavaslatiyor" sorusunun cevabi
+    # parse= degeri. proje-ozeti.md §8'in 300ms tahmini hic olculmedi.
+    print(f"  gecikme: {response.timing_summary()}"
+          f"{f'  (gevsetme {response.ladder_steps} adim)' if response.ladder_steps > 1 else ''}\n")
 
     if not response.intervals:
         print("Sonuc bulunamadi.")
