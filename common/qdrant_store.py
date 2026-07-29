@@ -14,6 +14,7 @@ Nokta kimliği `video_id + t_start`'tan türetilen deterministik UUID5 - aynı
 pencere yeniden ingest edilirse yeni satır değil güncelleme olur (idempotent
 backfill).
 """
+import atexit
 import uuid
 from dataclasses import asdict, dataclass, field
 
@@ -133,8 +134,16 @@ def close_client() -> None:
     if _client is not None:
         try:
             _client.close()
+        except Exception:  # noqa: BLE001
+            pass
         finally:
             _client, _client_key = None, None
+
+
+# Yorumlayici kapanirken QdrantClient.__del__ modul tablosu bosaltilmis
+# oldugu icin "ImportError: sys.meta_path is None" basiyordu - islevsel bir
+# sorun degil ama korkutucu gorunuyor. atexit ile daha erken, duzgun kapatiyoruz.
+atexit.register(close_client)
 
 
 def _quantization_config():

@@ -13,14 +13,136 @@ mission_017   1:02:24 - 1:02:56   (32s, 4 pencere, skor=0.774)
 Tam tasarım dokümanı: [proje-ozeti.md](proje-ozeti.md).
 Karar günlüğü ve ölçüm kayıtları: [docs/](docs/).
 
-> **Hiçbir şeyin kurulu olmadığı bir makinede sıfırdan kuracaksanız:**
-> [docs/sifirdan-kurulum.md](docs/sifirdan-kurulum.md) — NVIDIA
-> sürücüsünden çalışan aramaya kadar her adım, vLLM yapısal filtreleme
-> dahil, VRAM planlamasıyla birlikte.
->
-> Ortam zaten hazırsa ve sadece deneme akışını istiyorsanız:
-> [docs/deneme-rehberi.md](docs/deneme-rehberi.md).
-> Colab'da denemek için: [poc/colab_pipeline_trial.ipynb](poc/colab_pipeline_trial.ipynb).
+---
+
+## Hızlı başlangıç (Linux / WSL2, NVIDIA GPU)
+
+```bash
+git clone https://github.com/ykyking1/VideoAnalysis.git && cd VideoAnalysis
+./scripts/setup.sh                              # venv + bagimliliklar + Docker + dogrulama
+source .venv/bin/activate
+
+python -m scripts.ingest_all --dir ~/videolar/  # kaydet + ingest (vLLM kapali)
+./scripts/start_vllm.sh                         # ayri terminal, modeli VRAM'e gore secer
+python -m scripts.query_cli --interactive       # ara
+```
+
+Tek gereken ön koşul: **NVIDIA sürücüsü** (`nvidia-smi` çalışmalı) ve
+`git ffmpeg python3-venv docker`. `setup.sh` eksik olanı söyler.
+
+Neden ingest ve vLLM ayrı adım: ikisi aynı GPU'yu kullanıyor. vLLM ingest
+sırasında gerekmez ve açık olursa VRAM'i bölüp embedding'i yavaşlatır.
+Ingest bir kez, vLLM ise sorgu servisi ayakta kaldığı sürece açık.
+
+**Windows'ta doğrudan çalışmaz** — vLLM Windows'u desteklemiyor. WSL2 kurun
+(`wsl --install -d Ubuntu-24.04`), içinde yukarıdaki adımlar birebir aynı.
+
+Ayrıntı ve sorun giderme: [docs/sifirdan-kurulum.md](docs/sifirdan-kurulum.md) ·
+Colab: [poc/colab_pipeline_trial.ipynb](poc/colab_pipeline_trial.ipynb)
+
+### Örnek kullanım
+
+> Aşağıdaki çıktı biçimleri gerçek; **sayılar donanımınıza göre değişir.**
+> Özellikle `gercek-zaman` katı ölçmeniz gereken şeyin ta kendisi —
+> proje-ozeti.md §8 burada 40x varsayıyor ve bu doğrulanmadı.
+
+**1. Videoları koyun ve ingest edin**
+
+```console
+$ ls ~/videolar/
+ucus_042.mp4  ucus_043.mp4  ucus_044.mp4
+
+$ python -m scripts.ingest_all --dir ~/videolar/
+3 dosya bulundu, dogrulaniyor...
+
+  islenecek : 3
+  atlanan   : 0 (zaten ingest edilmis)
+  bozuk     : 0
+
+Toplam video suresi: 1.24 saat (~558 pencere)
+
+=== [1/3] ucus_042 ===
+  video  -> raw-videos/ucus_042/raw.mp4  [412.7 MB, 1680.4s, h264]
+[1/6] proxy uretiliyor...
+[2/6] telemetri isleniyor / pencereler uretiliyor...
+      211 pencere (1680.4s video)
+[3/6] embedding (211 pencere, batch=16)...
+[4/6] gorsel alanlar (YOLO)...
+      38.4s, toplam 96 arac tespiti
+[5/6] caption ATLANDI (--skip-caption)
+[6/6] Qdrant'a yaziliyor...
+--- ucus_042 tamamlandi ---
+Pencere         : 211 (1680.4s video)
+Yazilan nokta   : 211
+...
+============================================================
+Bitti: 3/3 video, 12.7 dk
+Genel hiz: 5.86x gercek-zaman
+```
+
+Yarıda kesilirse aynı komut kaldığı yerden devam eder — biten videolar
+atlanır. Bozuk dosyalar kayıt anında yakalanıp raporlanır, yükleme düşmez.
+
+**2. vLLM'i başlatın** (ayrı terminal — modeli VRAM'inize göre kendi seçer)
+
+```console
+$ ./scripts/start_vllm.sh
+GPU toplam        : 16380 MB
+Model             : Qwen/Qwen2.5-7B-Instruct-AWQ
+  gerekce         : 16380 MB VRAM - 7B rahat siginiyor
+gpu-memory-util   : 0.69  (embedding modeline ~5000 MB birakiliyor)
+...
+INFO:     Application startup complete.
+```
+
+**3. Arayın**
+
+```console
+$ python -m scripts.query_cli "gece deniz uzerinde en az 3 tekne"
+Yapisal filtre : is_night=True, over_sea=True, min_vehicle_count=3
+Semantik metin : 'tekne'
+
+2 aralik (287ms)
+  gecikme: parse=198ms embed=52ms qdrant=37ms merge=0ms
+
+ 1. ucus_043  0:21:36 - 0:22:24  (48s, 6 pencere, skor=0.812)
+ 2. ucus_042  0:04:08 - 0:04:32  (24s, 3 pencere, skor=0.774)
+```
+
+Sorgu iki parçaya ayrıldı: **yapısal filtre** (Qdrant'ta kesin eşleşme) +
+**semantik metin** (vektör araması). Ayrıştırmayı vLLM yapıyor; SQL veya
+sorgu metni üretmiyor, yalnızca şemadaki alanları dolduruyor — sorguyu kod
+kuruyor.
+
+**Filtre çok darsa otomatik gevşetir** ve bunu açıkça söyler:
+
+```console
+$ python -m scripts.query_cli "50 tekne olan goruntuler"
+Yapisal filtre : min_vehicle_count=50
+
+! Filtre gevsetildi: min_vehicle_count dusuruldu.
+  Hard filtreyle yeterli sonuc bulunamadi. Filtreye TAM uymayan
+  sonuclar asagida [yaklasik] olarak isaretli.
+
+ 1. ucus_044  0:08:00 - 0:08:16  (16s, 2 pencere, skor=0.691)  [yaklasik]
+```
+
+Bu davranışın gerekçesi ölçüme dayanıyor: dar bir hard filtre doğru cevabı
+yapısal olarak dışlayabiliyor (gerçek veriyle 21 sorgunun 17'sinde oldu) —
+bkz. [docs/worklog_2026-07-28.md](docs/worklog_2026-07-28.md).
+
+**Python API:**
+
+```python
+from query import run_query
+
+r = run_query("kiyi seridinde hareket eden tekne")
+for iv in r.intervals:
+    print(iv.video_id, iv.t_start, iv.t_end, iv.score)
+
+if r.was_relaxed:
+    print("Gevsetilen filtreler:", r.relaxed_fields)
+```
 
 ---
 

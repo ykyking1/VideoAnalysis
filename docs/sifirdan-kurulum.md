@@ -3,6 +3,18 @@
 **Varsayım: makinede hiçbir şey kurulu değil.** NVIDIA sürücüsünden başlayıp
 çalışan bir arama sistemine kadar her adım burada.
 
+> **Aceleniz varsa bu rehbere ihtiyacınız olmayabilir.** Ön koşullar
+> (`nvidia-smi` + `git ffmpeg python3-venv docker`) hazırsa dört komut yeter:
+> ```bash
+> ./scripts/setup.sh
+> source .venv/bin/activate
+> python -m scripts.ingest_all --dir ~/videolar/
+> ./scripts/start_vllm.sh     # ayri terminal
+> python -m scripts.query_cli --interactive
+> ```
+> Bu rehber o adımların **ne yaptığını**, neyin neden gerektiğini ve ters
+> giderse ne yapacağınızı anlatıyor. Sorun çıkmazsa okumanıza gerek yok.
+
 **Kapsam:**
 - Tam pipeline (ingest + sorgu)
 - **vLLM yapısal filtreleme dahil** — sorgu aşamasında sürekli açık
@@ -380,19 +392,24 @@ python -m scripts.ingest_video test2 test2/raw.mp4
 Temporal UI'da (<http://localhost:8080>) workflow'un tamamlandığını görün.
 Bu yol `--local`'dan farklı (retry, checkpoint, dağıtım).
 
-### Tüm veriyi yükleyin
+### Tüm veriyi yükleyin — tek komut
 
 ```bash
-python -m scripts.register_video --dir ~/videolar/
+python -m scripts.ingest_all --dry-run --dir ~/videolar/   # once plani gorun
+python -m scripts.ingest_all --dir ~/videolar/
 ```
 
-Worker çalışıyorsa ingest'i tetikleyin:
-```bash
-for f in ~/videolar/*; do
-  v=$(basename "${f%.*}")
-  python -m scripts.ingest_video "$v" "$v/raw.${f##*.}"
-done
-```
+`ingest_all` kaydetme ve ingest'i birlikte yapar, modeli **bir kez** yükler
+(her video için ayrı süreç video başına ~1 dakikayı modeli yeniden yüklemeye
+harcıyordu). Ayrıca:
+
+- **Zaten ingest edilmiş videoları atlar** — yarıda kesilirse aynı komutla
+  kaldığı yerden devam eder (`--force` ile yeniden işler)
+- **Bozuk dosyaları atlar ve sonda raporlar** — tek bozuk dosya tüm
+  yüklemeyi düşürmez
+- Sonda **genel gerçek-zaman katını** basar
+
+`--limit N` ile ilk N videoyla sınırlayabilirsiniz.
 
 ### Otomatik tetikleme (opsiyonel)
 
