@@ -62,6 +62,19 @@ class LocalFilesystemStorage:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(file_path, dst)
 
+        # Kopyanin tam oldugunu DOGRULA. Disk dolarsa kopya sessizce eksik
+        # kalabiliyor ve hata cok sonra ffmpeg'de "moov atom not found"
+        # olarak ortaya cikiyor - orada nedenini anlamak imkansiz.
+        src_size = Path(file_path).stat().st_size
+        dst_size = dst.stat().st_size
+        if dst_size != src_size:
+            free = shutil.disk_usage(dst.parent).free
+            dst.unlink(missing_ok=True)
+            raise OSError(
+                f"Kopya eksik kaldi: {dst_size}/{src_size} byte ({key}). "
+                f"Disk doldu mu? Bos alan: {free / 1024**3:.1f} GB"
+            )
+
     def fget_object(self, bucket: str, key: str, file_path: str, **_kwargs) -> None:
         src = self._object_path(bucket, key)
         if not src.is_file():
