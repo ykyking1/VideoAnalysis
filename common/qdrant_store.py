@@ -74,6 +74,15 @@ def point_id(video_id: str, t_start: float) -> str:
 
 
 def get_client() -> QdrantClient:
+    """QDRANT_LOCAL_PATH tanimliysa Docker'siz gomulu mod, aksi halde sunucu.
+
+    Gomulu mod (Colab/Kaggle icin) qdrant-client'in saf Python
+    implementasyonudur: gercek Rust HNSW motorunu KULLANMAZ, tam (exact)
+    arama yapar. Islevsel testler gecerli - hatta Recall daha yuksek cikar
+    cunku yaklasiklik yok - ama GECIKME OLCUMLERI ANLAMSIZDIR ve buyuk
+    korpusta kullanilamaz."""
+    if config.QDRANT_LOCAL_PATH:
+        return QdrantClient(path=config.QDRANT_LOCAL_PATH)
     return QdrantClient(
         host=config.QDRANT_HOST,
         port=config.QDRANT_PORT,
@@ -104,19 +113,28 @@ def ensure_collection(client: QdrantClient, collection: str | None = None,
         client.delete_collection(collection)
 
     if not client.collection_exists(collection):
-        client.create_collection(
-            collection_name=collection,
-            vectors_config=qm.VectorParams(
-                size=config.EMBEDDING_DIM,
-                distance=qm.Distance.COSINE,
-                on_disk=config.QDRANT_ON_DISK,
-            ),
-            hnsw_config=qm.HnswConfigDiff(
-                m=config.QDRANT_HNSW_M,
-                ef_construct=config.QDRANT_HNSW_EF_CONSTRUCT,
-            ),
-            quantization_config=_quantization_config(),
-        )
+        if config.QDRANT_LOCAL_PATH:
+            # Gomulu mod: on_disk/HNSW/kuantizasyon sunucu ozellikleri,
+            # saf Python implementasyonunda karsiligi yok.
+            client.create_collection(
+                collection_name=collection,
+                vectors_config=qm.VectorParams(
+                    size=config.EMBEDDING_DIM, distance=qm.Distance.COSINE),
+            )
+        else:
+            client.create_collection(
+                collection_name=collection,
+                vectors_config=qm.VectorParams(
+                    size=config.EMBEDDING_DIM,
+                    distance=qm.Distance.COSINE,
+                    on_disk=config.QDRANT_ON_DISK,
+                ),
+                hnsw_config=qm.HnswConfigDiff(
+                    m=config.QDRANT_HNSW_M,
+                    ef_construct=config.QDRANT_HNSW_EF_CONSTRUCT,
+                ),
+                quantization_config=_quantization_config(),
+            )
 
     existing = client.get_collection(collection).payload_schema or {}
     for field_name, schema in PAYLOAD_INDEXES.items():

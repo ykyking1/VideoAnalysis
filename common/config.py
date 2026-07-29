@@ -41,6 +41,12 @@ POSTGRES_PASSWORD = _env("POSTGRES_PASSWORD", "app")
 POSTGRES_DB = _env("POSTGRES_DB", "videoanalysis")
 
 # --- Vektör deposu (arama katmanı) ---
+# Docker'siz (gomulu) mod: sunucu yerine yerel bir dizin kullanilir.
+# Colab/Kaggle gibi Docker calistirilamayan ortamlar icin.
+# DIKKAT: gomulu mod qdrant-client'in saf Python implementasyonudur, gercek
+# Rust HNSW motorunu KULLANMAZ - tam (exact) arama yapar. Islevsel testler
+# gecerli, PERFORMANS OLCUMLERI GECERSIZ. Uretimde asla kullanmayin.
+QDRANT_LOCAL_PATH = os.environ.get("QDRANT_LOCAL_PATH") or None
 QDRANT_HOST = _env("QDRANT_HOST", "localhost")
 QDRANT_PORT = _env_int("QDRANT_PORT", 6333)
 QDRANT_GRPC_PORT = _env_int("QDRANT_GRPC_PORT", 6334)
