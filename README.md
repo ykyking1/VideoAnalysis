@@ -173,7 +173,18 @@ doğru gider.
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
 pip install -r requirements.txt
+
+# Kurulumu DOGRULAYIN - bu adimi atlamayin:
+python -m scripts.check_env
 ```
+
+> **⚠️ Neden `check_env` şart:** Bu yığındaki en pahalı iki hata çökmüyor,
+> **sessizce bozuluyor.** (1) Yalnızca `pip install -r requirements.txt`
+> yaparsanız PyPI CPU torch kurar — hiçbir hata almazsınız, ingest ~15-20 kat
+> yavaş koşar. (2) `qwen-vl-utils < 0.0.14` Qwen3-VL çağrılarında hata
+> fırlatmadan placeholder vektör döndürür ve Recall'ü şansa eşitler. İkincisi
+> gerçekten başımıza geldi (bkz. [docs/worklog_2026-07-29.md](docs/worklog_2026-07-29.md)).
+> `check_env` her ikisini de yakalar.
 
 `vllm` **Linux gerektirir** ve `requirements.txt`'te yok. Sorgu ayrıştırma /
 caption / rerank için:

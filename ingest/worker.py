@@ -27,12 +27,38 @@ from ingest.workflow import VideoIngestWorkflow
 MAX_CONCURRENT_ACTIVITIES = int(os.environ.get("MAX_CONCURRENT_ACTIVITIES", "1"))
 
 
+def _warn_if_no_gpu(log: logging.Logger) -> None:
+    """CPU-only torch sessiz bir felakettir: hicbir sey cokmez, ingest ~15-20
+    kat yavas kosar. 300.000 videoluk bir arsivde bu aylar demek. Worker
+    baslarken bunu bagirarak soylemek, saatler sonra fark etmekten iyidir.
+    Tam kontrol: python -m scripts.check_env"""
+    try:
+        import torch
+    except ImportError:
+        log.error("torch kurulu degil - embedding aktivitesi calismayacak")
+        return
+
+    if torch.cuda.is_available():
+        log.info("GPU: %s (%.1f GB)", torch.cuda.get_device_name(0),
+                 torch.cuda.get_device_properties(0).total_memory / 1024**3)
+        return
+
+    log.warning("=" * 62)
+    log.warning("GPU KULLANILMIYOR - torch %s", torch.__version__)
+    log.warning("Ingest calisir ama ~15-20 kat yavas olur.")
+    log.warning("Cozum: pip install torch torchvision --force-reinstall \\")
+    log.warning("         --index-url https://download.pytorch.org/whl/cu126")
+    log.warning("Tam kontrol: python -m scripts.check_env")
+    log.warning("=" * 62)
+
+
 async def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     log = logging.getLogger("ingest.worker")
+    _warn_if_no_gpu(log)
 
     client = await Client.connect(config.TEMPORAL_HOST, namespace=config.TEMPORAL_NAMESPACE)
     log.info("Temporal'a baglanildi: %s (namespace=%s, queue=%s)",
