@@ -13,6 +13,11 @@ mission_017   1:02:24 - 1:02:56   (32s, 4 pencere, skor=0.774)
 Tam tasarım dokümanı: [proje-ozeti.md](proje-ozeti.md).
 Karar günlüğü ve ölçüm kayıtları: [docs/](docs/).
 
+> **Yeni bir makinede sıfırdan kurup deneyecekseniz:**
+> [docs/deneme-rehberi.md](docs/deneme-rehberi.md) — kurulumdan sorgu
+> testlerine kadar adım adım, her adımda ne görmeniz gerektiği ve ters
+> giderse ne yapacağınızla birlikte.
+
 ---
 
 ## ⚠️ Önce okuyun: kapasite gerçeği
