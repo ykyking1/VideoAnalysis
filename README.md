@@ -355,7 +355,7 @@ Temporal UI <http://localhost:8080>.
 
 ```bash
 vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
-    --guided-decoding-backend xgrammar \
+    --structured-outputs-config.backend xgrammar \
     --gpu-memory-utilization 0.85 --max-model-len 8192
 ```
 

@@ -101,7 +101,7 @@ print('.env guncellendi: PARSE_MODEL=$MODEL')
 PY
 
 exec vllm serve "$MODEL" \
-    --guided-decoding-backend xgrammar \
+    --structured-outputs-config.backend xgrammar \
     --gpu-memory-utilization "$FRAC" \
     --max-model-len 8192 \
     "${DTYPE_FLAG[@]}"

@@ -116,7 +116,7 @@ services:
       - "8000:8000"
     command: >
       --model ${PARSE_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
-      --guided-decoding-backend xgrammar
+      --structured-outputs-config.backend xgrammar
       --gpu-memory-utilization 0.85
       --max-model-len 8192
     environment:

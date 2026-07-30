@@ -482,7 +482,7 @@ Ayrı bir terminalde (venv aktifken) başlatın:
 ```bash
 source .venv/bin/activate
 vllm serve $PARSE_MODEL \
-    --guided-decoding-backend xgrammar \
+    --structured-outputs-config.backend xgrammar \
     --gpu-memory-utilization $VLLM_GPU_FRAC \
     --max-model-len 8192
 ```
@@ -570,7 +570,7 @@ işleyebiliyor, yani tek sunucu iki işi de yapar:
 ```bash
 # vLLM'i durdurun, VL modeliyle yeniden baslatin (16 GB+ onerilir)
 vllm serve Qwen/Qwen2.5-VL-7B-Instruct-AWQ \
-    --guided-decoding-backend xgrammar \
+    --structured-outputs-config.backend xgrammar \
     --gpu-memory-utilization 0.55 --max-model-len 8192
 ```
 

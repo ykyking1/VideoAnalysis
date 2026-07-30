@@ -244,7 +244,7 @@ pip install uv
 uv pip install -r requirements-serving.txt --torch-backend=auto
 
 vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
-    --guided-decoding-backend xgrammar \
+    --structured-outputs-config.backend xgrammar \
     --gpu-memory-utilization 0.85 --max-model-len 8192
 
 python -m scripts.check_env                  # "vLLM erisilebilir" gormeli

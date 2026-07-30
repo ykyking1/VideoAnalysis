@@ -6,10 +6,18 @@
 - ingest/.../selective_caption.py ve query/rerank.py -> görüntülü VLM çağrıları
                           (§3.1 madde 5, §3.2 madde 4)
 
-ŞEMA ZORLAMA: vLLM'in guided decoding'i (xgrammar backend) `extra_body` içinde
-`guided_json` ile veriliyor. Bu, proje-ozeti.md §3.2'deki "xgrammar ile şema
-zorlamalı yapısal çıktı" gereksinimini karşılıyor - modelin şema dışına
-çıkması gramer düzeyinde engelleniyor, "JSON döndür" ricası değil.
+ŞEMA ZORLAMA: `extra_body` içinde `structured_outputs.json` ile veriliyor.
+Bu, proje-ozeti.md §3.2'deki "xgrammar ile şema zorlamalı yapısal çıktı"
+gereksinimini karşılıyor - modelin şema dışına çıkması gramer düzeyinde
+engelleniyor, "JSON döndür" ricası değil. Hangi backend'in (xgrammar vb.)
+kullanılacağı artık İSTEK BAŞINA değil, sunucu başlatılırken
+`--structured-outputs-config.backend` ile seçiliyor (bkz. scripts/start_vllm.sh).
+
+NOT (2026-07): Eski `guided_json`/`guided_decoding_backend` extra_body
+alanları vLLM v0.12.0'da KALDIRILDI (deprecated değil, tamamen silindi) -
+sessizce yok sayılmıyor, istek hata veriyor. Kendi ortamınızda daha eski
+bir vLLM çalıştırıyorsanız bu fonksiyon çalışmaz; requirements-serving.txt
+güncel vLLM (0.20+) hedefliyor.
 
 MODEL SEÇİMİ: §3.2 Qwen 14B öngörüyor. Tek 4060 sınıfı GPU'da 14B pratik
 değil; varsayılan 7B-AWQ. PARSE_MODEL/VLM_MODEL env'leriyle değiştirilebilir -
@@ -52,7 +60,7 @@ def chat_json(system_prompt: str, user_prompt: str, json_schema: dict,
             {"role": "user", "content": user_prompt},
         ],
         "temperature": temperature,
-        "extra_body": {"guided_json": json_schema, "guided_decoding_backend": "xgrammar"},
+        "extra_body": {"structured_outputs": {"json": json_schema}},
     }
     data = _post(base_url or config.VLLM_BASE_URL, payload, config.LLM_TIMEOUT_S)
     return data["choices"][0]["message"]["content"]
