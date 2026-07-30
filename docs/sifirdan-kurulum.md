@@ -192,8 +192,18 @@ Kurulumu şimdi yapıyoruz ama **sunucuyu 10. bölümde başlatacağız** —
 ingest sırasında açık olması VRAM'i boşuna bölerdi.
 
 ```bash
-pip install -r requirements-serving.txt
+pip install uv
+uv pip install -r requirements-serving.txt --torch-backend=auto
 ```
+
+> **Neden `uv --torch-backend=auto`, düz `pip install` değil:** vLLM'in en
+> güncel PyPI paketi varsayılan olarak CUDA 13 runtime bekliyor
+> (`libcudart.so.13`), ama çoğu ortamda (Colab dahil) torch/sürücü CUDA
+> 12.x. Bu, vLLM'in bilinen bir paketleme sorunu (GitHub #43435, "not
+> planned" kapatıldı). `--torch-backend=auto` mevcut CUDA sürümünü tespit
+> edip uyumlu paketi seçiyor. Otomatik tespit başarısız olursa elle
+> belirtin: `--torch-backend=cu128` (`nvidia-smi` çıktısındaki "CUDA
+> Version" ile eşleşen sürümü kullanın).
 
 ---
 

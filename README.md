@@ -330,7 +330,7 @@ hazır paket bulamayıp kaynaktan derlemeye çalışır ve başarısız olur.
 
 | Ortam | Yol |
 |---|---|
-| Linux / Colab / Kaggle | `pip install -r requirements-serving.txt` |
+| Linux / Colab / Kaggle | `pip install uv && uv pip install -r requirements-serving.txt --torch-backend=auto` |
 | Windows + Docker | `docker compose --profile gpu up -d vllm` |
 | Windows + WSL2 | WSL içine kurun, host'tan `localhost:8000` |
 | Ayrı sunucu | `VLLM_BASE_URL`'i ona yönlendirin |

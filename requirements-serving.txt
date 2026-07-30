@@ -1,8 +1,25 @@
 # vLLM sunucusu — sorgu ayrıştırma (§3.2 madde 1), caption (§3.1 madde 5),
 # rerank (§3.2 madde 4) için.
 #
-#     pip install -r requirements.txt          # once ana yigin
-#     pip install -r requirements-serving.txt  # sonra bu
+# BU DOSYAYI DÜZ `pip install -r` İLE KURMAYIN — bkz. aşağıdaki uyarı.
+# Doğru kurulum:
+#
+#     pip install -r requirements.txt      # once ana yigin
+#     pip install uv
+#     uv pip install -r requirements-serving.txt --torch-backend=auto
+#
+# NEDEN uv --torch-backend=auto GEREKLİ: Düz `pip install vllm`, vLLM'in en
+# güncel PyPI paketini çeker ve bu paket varsayılan olarak CUDA 13 runtime
+# kütüphanesi (`libcudart.so.13`) bekliyor - ortamınızdaki torch/sürücü CUDA
+# 12.x ise (Colab dahil çoğu ortam) şu hatayla çöküyor:
+#
+#     ImportError: libcudart.so.13: cannot open shared object file
+#
+# Bu, vLLM'in kendi paketleme hatası (yukarı akış GitHub issue #43435,
+# "not planned" olarak kapatıldı - bilinen, düzeltilmemiş bir sorun).
+# `uv pip install --torch-backend=auto`, mevcut CUDA sürücü sürümünü
+# tespit edip UYUMLU vLLM ikili paketini seçiyor - vLLM'in resmi
+# dokümantasyonunun önerdiği yol (docs.vllm.ai/getting_started/installation/gpu).
 #
 # LINUX GEREKTİRİR. vLLM'in resmi platform listesinde Windows YOK (NVIDIA CUDA,
 # AMD ROCm, Intel XPU, Apple Silicon - hepsi Linux tabanlı). Windows'ta
@@ -19,9 +36,8 @@
 # kalır), caption üretilmez, rerank atlanır. Yani bu dosya opsiyoneldir -
 # ama yapısal filtreleme (§3.2'nin yarısı) onsuz çalışmaz.
 #
-# vLLM kendi torch sürümünü çekebilir; requirements.txt'ten SONRA kurun ve
-# ardından `python -m scripts.check_env` ile torch'un hâlâ CUDA derlemesi
-# olduğunu doğrulayın.
+# Kurulum sonrası mutlaka: `python -m scripts.check_env` - vLLM kendi torch
+# sürümünü çekmiş olabilir, torch'un hâlâ CUDA derlemesi olduğunu doğrulayın.
 
 vllm>=0.6
 xgrammar>=0.1

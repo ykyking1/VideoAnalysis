@@ -231,7 +231,7 @@ hazır paket bulamayıp kaynaktan derlemeye çalışır ve başarısız olur (de
 
 | Ortamınız | Ne yapmalı |
 |---|---|
-| **Linux sunucu** | Doğrudan `pip install -r requirements-serving.txt` |
+| **Linux sunucu** | `pip install uv && uv pip install -r requirements-serving.txt --torch-backend=auto` |
 | **Colab / Kaggle** | Zaten Linux — doğrudan kurulur |
 | **Windows + Docker** | `docker compose --profile gpu up -d vllm` (konteyner Linux, altta WSL2) |
 | **Windows + WSL2** | WSL içine kurun, host'tan `localhost:8000` üzerinden erişilir |
@@ -240,7 +240,8 @@ hazır paket bulamayıp kaynaktan derlemeye çalışır ve başarısız olur (de
 ### Kurulum
 
 ```bash
-pip install -r requirements-serving.txt
+pip install uv
+uv pip install -r requirements-serving.txt --torch-backend=auto
 
 vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
     --guided-decoding-backend xgrammar \
@@ -248,6 +249,13 @@ vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
 
 python -m scripts.check_env                  # "vLLM erisilebilir" gormeli
 ```
+
+> Düz `pip install vllm` en güncel paketi çekip CUDA 13 runtime bekleyerek
+> `libcudart.so.13: cannot open shared object file` hatasıyla çökebilir —
+> vLLM'in bilinen bir paketleme sorunu (GitHub #43435, "not planned"
+> kapatıldı). `uv --torch-backend=auto` mevcut CUDA sürümünü tespit edip
+> uyumlu paketi seçiyor. Otomatik tespit başarısız olursa elle belirtin:
+> `--torch-backend=cu128` (`nvidia-smi` çıktısındaki CUDA sürümüyle eşleşen).
 
 **Tek GPU'daysanız: ingest BİTTİKTEN SONRA başlatın.** İkisi aynı anda VRAM'i
 böler, ikisi de yavaşlar veya OOM olur.

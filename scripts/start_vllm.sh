@@ -20,6 +20,23 @@ RERANK=0
 command -v nvidia-smi >/dev/null 2>&1 || {
     echo "[HATA] nvidia-smi yok - GPU gorunmuyor." >&2; exit 1; }
 TOTAL_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits | head -1)
+CC=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader | head -1)
+
+# T4 (compute 7.5) ve oncesi bfloat16 Tensor Core desteklemiyor - vLLM'e
+# acikca fp16 soyluyoruz, otomatik tespite guvenmiyoruz (embedding modelinde
+# ayni sorunu yasadik, bkz. ingest/activities/clip_embedding.py).
+if awk "BEGIN{exit !($CC < 8.0)}"; then
+    DTYPE_FLAG=(--dtype half)
+    echo "compute capability $CC < 8.0 - --dtype half (fp16) kullanilacak"
+else
+    DTYPE_FLAG=()
+fi
+
+if ! command -v vllm >/dev/null 2>&1; then
+    echo "[HATA] vllm komutu bulunamadi. Kurulum:" >&2
+    echo "  pip install uv && uv pip install -r requirements-serving.txt --torch-backend=auto" >&2
+    exit 1
+fi
 
 # --- Model secimi ----------------------------------------------------------
 # Agirliklar (HuggingFace'ten dogrulandi):
@@ -86,4 +103,5 @@ PY
 exec vllm serve "$MODEL" \
     --guided-decoding-backend xgrammar \
     --gpu-memory-utilization "$FRAC" \
-    --max-model-len 8192
+    --max-model-len 8192 \
+    "${DTYPE_FLAG[@]}"
