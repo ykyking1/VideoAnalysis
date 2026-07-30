@@ -57,6 +57,30 @@ Bu, docs/worklog_2026-07-28.md'deki hard-filtre ölçümünün (sentetik +
 N=21 gerçek veri) devamıdır — burada gerçek pipeline ve daha büyük bir
 korpusla tekrarlanır.
 
+## queries.jsonl kaynağı (2026-07-30, Kaggle + SeaDroneSee)
+
+Bu dosyadaki 12 sorgu, `data/seadronessee_train.zip` içindeki `manifest.json`'dan
+türetildi (21 klip, her biri için `max_concurrent_per_category`, `avg_altitude_m`,
+`avg_speed_ms`). **Etiketler kendi pipeline'ımızın ürettiği değil, veri setinin
+kendi meta verisidir** — döngüsellik yok (bkz. `evaluate_self_retrieval`'in
+"ZAYIF PROXY" uyarısı, buradaki yöntem ondan farklı ve daha güçlü).
+
+Kapsam/sınırlar:
+- **Tekne sayısı sorguları (`min_vehicle_count`)** en güvenilir kısım: bu alan
+  gerçekten YOLO26 ile dolduruluyor (`ingest/activities/visual_fields.py`,
+  `VEHICLE_LIKE_CLASSES` içinde `boat`) ve manifest'in `boat` kategorisiyle
+  aynı kavramı ölçüyor.
+- **İrtifa sorguları (son 2 satır) SADECE semantik test** - `min_agl_m` alanı
+  Qdrant'ta bu klipler için HİÇ dolu değil (SeaDroneSee video dosyalarında
+  gömülü MAVLink telemetrisi yok, `manifest.json`'daki `avg_altitude_m` ayrı
+  bir kaynaktan hesaplanmış, ingest hattımıza hiç ulaşmıyor). Bu sorularda
+  filtre her zaman gevşeyecek - bu bir hata değil, "bu test verisinde gerçek
+  telemetri yok" gerçeğinin yansıması.
+- İki sorguda ("5 tekne", "4 tekne") birden fazla klip aynı derecede doğru
+  cevap ama tek video_id etiketleyebildik (format kısıtı) - Recall@5/@10'u
+  bozmaz (etiketlenen klip hâlâ doğru), sadece Recall@1/MRR'ı hafifçe
+  muhafazakar tarafa çeker.
+
 ## Örneklem büyüklüğü uyarısı
 
 Bu projede N=21'lik bir ölçekte **tek bir klibin sıra değiştirmesinin Recall'ü
