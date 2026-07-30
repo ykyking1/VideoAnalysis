@@ -250,12 +250,14 @@ vllm serve Qwen/Qwen2.5-7B-Instruct-AWQ \
 python -m scripts.check_env                  # "vLLM erisilebilir" gormeli
 ```
 
-> Düz `pip install vllm` en güncel paketi çekip CUDA 13 runtime bekleyerek
-> `libcudart.so.13: cannot open shared object file` hatasıyla çökebilir —
-> vLLM'in bilinen bir paketleme sorunu (GitHub #43435, "not planned"
-> kapatıldı). `uv --torch-backend=auto` mevcut CUDA sürümünü tespit edip
-> uyumlu paketi seçiyor. Otomatik tespit başarısız olursa elle belirtin:
-> `--torch-backend=cu128` (`nvidia-smi` çıktısındaki CUDA sürümüyle eşleşen).
+> **⚠️ Bilinen sorun:** vLLM v0.20+ "libtorch stable ABI"ye geçti ve bu
+> sürümlerin ikili uzantısı CUDA 13 runtime'a sabit bağımlı —
+> `--torch-backend=auto` bunu **düzeltmiyor** (denendi, `libcudart.so.13`
+> hatası devam ediyor; GitHub #43435, "not planned" kapatıldı).
+> `requirements-serving.txt` bu yüzden geçiş öncesi son sürüme
+> (`vllm==0.8.3`) sabitlenmiş — bu tarafımızca uçtan uca doğrulanmadı
+> (Windows'ta vLLM çalışmadığı için test edemedik). Sorun devam ederse
+> alternatifler için `requirements-serving.txt`'in içindeki notlara bakın.
 
 **Tek GPU'daysanız: ingest BİTTİKTEN SONRA başlatın.** İkisi aynı anda VRAM'i
 böler, ikisi de yavaşlar veya OOM olur.

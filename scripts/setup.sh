@@ -55,15 +55,16 @@ pip install --upgrade -q pip
 echo "requirements.txt kuruluyor (CUDA'li torch dahil, ilk seferde uzun surer)..."
 pip install -q -r requirements.txt
 echo "vLLM kuruluyor (yapisal filtreleme)..."
-# Duz 'pip install vllm' CUDA 13 runtime bekleyen en guncel paketi cekip
-# "libcudart.so.13" hatasiyla cokebiliyor (vLLM'in bilinen, duzeltilmemis
-# paketleme sorunu). uv --torch-backend=auto mevcut CUDA suru
-# munu tespit edip uyumlu paketi seciyor - vLLM'in resmi onerisi.
+# vLLM v0.20+ "libtorch stable ABI"ye gecti, bu surumlerin _C_stable_libtorch
+# uzantisi CUDA 13 runtime'a SABIT bagimli - --torch-backend=auto bunu
+# ETKILEMIYOR (denendi, "libcudart.so.13" hatasi devam ediyor). PyPI'da
+# gercek bir CUDA13 runtime paketi de yok. requirements-serving.txt bu
+# yuzden gecis ONCESI son surume (0.8.3) sabitli - detay orada.
 pip install -q uv
 uv pip install -q -r requirements-serving.txt --torch-backend=auto || warn \
     "vLLM kurulamadi - Linux disi bir ortamda olabilirsiniz ya da CUDA surumu
      tespit edilemedi. Arama yine calisir, sadece yapisal filtreleme devre disi
-     kalir. Elle deneyin: uv pip install vllm xgrammar --torch-backend=cu128"
+     kalir. Detay ve alternatifler: requirements-serving.txt"
 
 # --- 3. .env ---------------------------------------------------------------
 say "Yapilandirma"

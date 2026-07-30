@@ -196,14 +196,14 @@ pip install uv
 uv pip install -r requirements-serving.txt --torch-backend=auto
 ```
 
-> **Neden `uv --torch-backend=auto`, düz `pip install` değil:** vLLM'in en
-> güncel PyPI paketi varsayılan olarak CUDA 13 runtime bekliyor
-> (`libcudart.so.13`), ama çoğu ortamda (Colab dahil) torch/sürücü CUDA
-> 12.x. Bu, vLLM'in bilinen bir paketleme sorunu (GitHub #43435, "not
-> planned" kapatıldı). `--torch-backend=auto` mevcut CUDA sürümünü tespit
-> edip uyumlu paketi seçiyor. Otomatik tespit başarısız olursa elle
-> belirtin: `--torch-backend=cu128` (`nvidia-smi` çıktısındaki "CUDA
-> Version" ile eşleşen sürümü kullanın).
+> **⚠️ Bilinen sorun:** vLLM v0.20+ sürümleri "libtorch stable ABI"ye geçti;
+> bu sürümlerin kendi ikili uzantısı CUDA 13 runtime'a sabit bağımlı ve
+> `--torch-backend=auto` bunu **etkilemiyor** (denendi, `libcudart.so.13`
+> hatası devam ediyor — GitHub #43435, "not planned" kapatıldı). Bu yüzden
+> `requirements-serving.txt` geçiş öncesi son sürüme (`vllm==0.8.3`)
+> sabitlenmiş — **bu tarafımızca uçtan uca doğrulanmadı** (vLLM Windows'ta
+> çalışmadığı için test edemedik). Sorun devam ederse alternatifler için
+> `requirements-serving.txt`'in içindeki notlara bakın.
 
 ---
 
