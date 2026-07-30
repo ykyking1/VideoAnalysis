@@ -64,6 +64,51 @@ def check_torch() -> None:
         print("                 --index-url https://download.pytorch.org/whl/cu126")
 
 
+def check_system_ram() -> None:
+    """Model yuklemesi VRAM'den once SISTEM RAM'ini zorluyor.
+
+    from_pretrained agirliklari once CPU'da olusturuyor; low_cpu_mem_usage
+    ile tepe kullanim ~model boyutu (4 GB), onsuz ~2 kati. Colab'in ~12.7 GB
+    RAM'inde bu sinira gercekten carpildi (yukleme %47'de cokme)."""
+    total_gb = None
+    try:  # Linux/WSL
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    total_gb = int(line.split()[1]) / 1024**2
+                    break
+    except OSError:
+        try:
+            import ctypes
+
+            class _MS(ctypes.Structure):
+                _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
+                            ("ullTotalPhys", ctypes.c_ulonglong),
+                            ("ullAvailPhys", ctypes.c_ulonglong),
+                            ("ullTotalPageFile", ctypes.c_ulonglong),
+                            ("ullAvailPageFile", ctypes.c_ulonglong),
+                            ("ullTotalVirtual", ctypes.c_ulonglong),
+                            ("ullAvailVirtual", ctypes.c_ulonglong),
+                            ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
+            st = _MS(); st.dwLength = ctypes.sizeof(_MS)
+            ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st))
+            total_gb = st.ullTotalPhys / 1024**3
+        except Exception:  # noqa: BLE001
+            pass
+
+    if total_gb is None:
+        return
+    if total_gb < 8:
+        report(FAIL, f"Sistem RAM {total_gb:.1f} GB - embedding modeli (4 GB) "
+                     f"yuklenirken cokebilir")
+    elif total_gb < 13:
+        report(WARN, f"Sistem RAM {total_gb:.1f} GB - sinirda. Model yuklemesi "
+                     f"cokerse EMBEDDING_BATCH_SIZE degil, RAM sorunudur "
+                     f"(yukleme asamasinda cokuyor).")
+    else:
+        report(OK, f"Sistem RAM {total_gb:.1f} GB")
+
+
 def check_qwen_vl_utils() -> None:
     """0.0.14 oncesi surumler Qwen3-VL'i SESSIZCE bozuyor."""
     try:
@@ -182,6 +227,7 @@ def main() -> int:
 
     print("\n-- Model calistirma --")
     check_torch()
+    check_system_ram()
     check_transformers()
     check_qwen_vl_utils()
 

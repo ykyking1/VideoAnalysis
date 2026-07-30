@@ -81,20 +81,36 @@ def _get_embedder():
 
         dtype = _resolve_dtype()
         _log(f"embedding modeli yukleniyor: {model_dir} (dtype={dtype})")
-        try:
-            _embedder = Qwen3VLEmbedder(
-                model_dir,
-                num_frames=config.EMBEDDING_NUM_FRAMES,
-                max_frames=config.EMBEDDING_NUM_FRAMES,
-                dtype=dtype,
-            )
-        except TypeError:
-            # Bundle edilen surumun imzasi dtype kabul etmiyorsa varsayilanla yukle
-            _embedder = Qwen3VLEmbedder(
-                model_dir,
-                num_frames=config.EMBEDDING_NUM_FRAMES,
-                max_frames=config.EMBEDDING_NUM_FRAMES,
-            )
+
+        base = {"num_frames": config.EMBEDDING_NUM_FRAMES,
+                "max_frames": config.EMBEDDING_NUM_FRAMES}
+
+        # SISTEM RAM'i (VRAM degil) - yukleme sirasinda cokme sebebi buydu.
+        # from_pretrained varsayilan olarak modeli once CPU'da tam olarak
+        # olusturup sonra .to(device) yapiyor; state dict + model ayni anda
+        # RAM'de duruyor ve tepe kullanim modelin ~2 katina cikiyor. 4 GB'lik
+        # bu modelde ~8 GB demek - Colab'in ~12.7 GB RAM'inde diger kutuphanelerle
+        # birlikte cokuyor ("Loading weights: %47"'de oldugu gozlendi).
+        # low_cpu_mem_usage=True agirliklari parca parca yukluyor, tepe
+        # kullanimi model boyutuna indiriyor.
+        attempts = [
+            {**base, "dtype": dtype, "low_cpu_mem_usage": True},
+            {**base, "dtype": dtype},          # eski transformers/imza
+            base,                              # dtype kabul etmiyorsa
+        ]
+        last_error: Exception | None = None
+        for i, kwargs in enumerate(attempts):
+            try:
+                _embedder = Qwen3VLEmbedder(model_dir, **kwargs)
+                if i:
+                    _log(f"  (geri cekilme: {sorted(set(kwargs) - set(base)) or 'varsayilan'})")
+                break
+            except TypeError as exc:
+                last_error = exc          # imza bu kwarg'i kabul etmiyor, sonrakini dene
+        else:
+            raise RuntimeError(
+                f"Embedding modeli yuklenemedi: {last_error}"
+            ) from last_error
     return _embedder
 
 
