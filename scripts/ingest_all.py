@@ -19,6 +19,7 @@ Kullanım:
 """
 import argparse
 import asyncio
+import re
 import sys
 import time
 from pathlib import Path
@@ -28,6 +29,15 @@ from common.console import use_utf8_stdout
 use_utf8_stdout()
 
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".avi", ".mpg", ".mpeg", ".m4v")
+
+
+def _natural_sort_key(path: Path) -> list:
+    # "sds_train_10" harf-sirasinda "sds_train_2"den ONCE gelir - --limit N
+    # verildiginde kullanicinin bekledigi "ilk N" yerine keyfi bir altkume
+    # secilmesine yol aciyordu. Sayisal parcalari int'e cevirip dogal siraya
+    # (0,1,2,...,10,11) getiriyoruz.
+    return [int(part) if part.isdigit() else part.lower()
+            for part in re.split(r"(\d+)", path.stem)]
 
 
 def already_ingested(video_id: str) -> bool:
@@ -56,8 +66,8 @@ async def main_async(args) -> int:
         print(f"Klasor bulunamadi: {folder}")
         return 1
 
-    candidates = sorted(p for p in folder.iterdir()
-                        if p.suffix.lower() in VIDEO_EXTENSIONS)
+    candidates = sorted((p for p in folder.iterdir()
+                         if p.suffix.lower() in VIDEO_EXTENSIONS), key=_natural_sort_key)
     if not candidates:
         print(f"{folder} icinde video bulunamadi "
               f"(aranan uzantilar: {', '.join(VIDEO_EXTENSIONS)})")
