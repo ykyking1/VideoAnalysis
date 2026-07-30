@@ -7,34 +7,49 @@
 #     pip install uv
 #     uv pip install -r requirements-serving.txt --torch-backend=auto
 #
-# ⚠️ BİLİNEN, ÇÖZÜLMEMİŞ SORUN (2026-07): vLLM'in v0.20+ sürümleri "libtorch
-# stable ABI"ye geçti (v0.22'de başladı, v0.24'te tamamlandı - vLLM release
-# notları) ve bu sürümlerin `_C_stable_libtorch` uzantısı CUDA 13 runtime'a
-# SABİT bağımlı - `--torch-backend=auto` bunu ETKİLEMİYOR (o sadece torch'un
-# kendi CUDA derlemesini seçiyor, vLLM'in kendi ikili uzantısını değil).
-# Hata (denendi, gerçekten oluyor):
+# ⚠️ SÜRÜM GEÇMİŞİ (2026-07, gerçekten yaşandı - Colab + Kaggle'da denendi):
 #
-#     ImportError: libcudart.so.13: cannot open shared object file
+# 1) Düz `pip install vllm` en güncel paketi çeker. vLLM v0.20+ "libtorch
+#    stable ABI"ye geçti; bu sürümlerin ikili uzantısı CUDA 13 runtime
+#    (`libcudart.so.13`) bekliyor. Çoğu ortamda (Colab dahil) bu kütüphane
+#    yok -> ImportError. `--torch-backend=auto` bunu ETKİLEMİYOR (sadece
+#    torch'un CUDA derlemesini seçiyor, vLLM'in kendi ikilisini değil).
 #
-# PyPI'da gerçek/işlevsel bir CUDA 13 runtime paketi de yok
-# (`nvidia-cuda-runtime-cu13` sadece sürüm 0.0.1 - boş bir yer tutucu).
-# vLLM'in kendi issue'su bu durumu "not planned" diye kapattı:
-# github.com/vllm-project/vllm/issues/43435
+# 2) Bunun üzerine `vllm==0.8.3`'e (stable-ABI öncesi son sürüm) sabitledik.
+#    Bu da AYRI bir soruna çarptı: 0.8.3 `torch==2.6.0`'a SABİT bağımlı, ve
+#    torch 2.6.0 PyPI'dan tamamen kaldırılmış (doğrulandı: `pip index
+#    versions torch` en eski 2.9.0'ı gösteriyor). Sonuç ortama göre değişti -
+#    Colab'da resolver sessizce eski (0.26.0) sürümde kaldı, Kaggle'da 0.8.3
+#    gerçekten kuruldu ama uyumsuz bir torch ile eşleşip
+#    "undefined symbol: ...parseSchemaOrName..." ABI hatası verdi.
 #
-# ÇÖZÜM (araştırmaya dayanıyor, TARAFIMIZCA UÇTAN UCA DOĞRULANMADI - vLLM
-# Windows'ta çalışmadığı için test edemedik): stable-ABI geçişinden ÖNCEKİ
-# son sürüme sabitleyin. v0.8.3, PyPI'daki bu geçiş öncesi son sürüm.
+# ÇÖZÜM (PyPI JSON API ile doğrulandı - pypi.org/pypi/vllm/<surum>/json):
+# v0.20.0'dan mevcut en güncel sürüme kadar HEPSİ `torch==2.11.0`'a sabit,
+# ve bu sürüm hâlâ kurulabilir. Eski bir vLLM sürümüne sabitlemek yerine
+# GÜNCEL vLLM'i, ihtiyaç duyduğu torch sürümüyle birlikte AÇIKÇA istiyoruz -
+# resolver'ın "zaten kurulu olanı koru" gibi belirsiz davranışına
+# bırakmıyoruz:
 #
-#     uv pip install "vllm==0.8.3" xgrammar --torch-backend=auto
+#     uv pip install -q --system "torch==2.11.0" vllm xgrammar --torch-backend=auto
 #
-# Bu da çalışmazsa: hedef makineniz Linux + Docker ise (Colab değil)
-# docker-compose.yml'deki `gpu` profilini deneyin - Docker imajı kendi
-# CUDA runtime'ını taşıyor, pip'in sürüm seçimi sorununu tamamen atlıyor:
+# Bu KISMEN doğrulandı (Kaggle'daki ABI hatasının kök nedenini açıklıyor ve
+# çözüyor) ama TAM uçtan uca doğrulanmadı - eğer torch==2.11.0 doğru
+# kurulursa vLLM'in kendi CUDA13 runtime ihtiyacı da (muhtemelen torch'un
+# kendi nvidia-* bağımlılıkları üzerinden) karşılanmış olabilir, ama bu
+# tarafımızca çalıştırılıp GÖRÜLMEDİ. Yine `libcudart.so` hatası çıkarsa
+# bu ayrı, hâlâ çözülmemiş bir sorun demektir (GitHub #43435, "not planned").
+#
+# requirements-serving.txt bu yüzden vLLM sürümünü SABİTLEMİYOR - torch'u
+# sabitliyor, vLLM'in kendi bağımlılık bildirimi torch'a göre doğru sürümü
+# seçsin diye.
+#
+# Sonucu bize bildirin - bu dosya buna göre güncellenmeli.
+#
+# Alternatif (hedef makineniz Linux + Docker ise, Colab/Kaggle değilse):
+# Docker imajı kendi CUDA runtime'ını taşıyor, pip'in versiyon secimi
+# sorununu tamamen atlıyor:
 #
 #     docker compose --profile gpu up -d vllm
-#
-# Bu sonucu bize bildirin - sabitlenen sürüm çalışırsa/çalışmazsa bu dosya
-# güncellenmeli.
 #
 # LINUX GEREKTİRİR. vLLM'in resmi platform listesinde Windows YOK. Windows'ta
 # üç seçenek: (1) docker compose --profile gpu up -d vllm, (2) WSL2 içine
@@ -47,5 +62,6 @@
 #
 # Kurulum sonrası mutlaka: `python -m scripts.check_env`
 
-vllm==0.8.3
+torch==2.11.0
+vllm
 xgrammar>=0.1
