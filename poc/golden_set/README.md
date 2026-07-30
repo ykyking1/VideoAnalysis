@@ -44,6 +44,19 @@ tutulup ayrıca çalıştırılabilir — ölçmek istediğiniz şey "yanlış o
 getirmiyor mu" olduğu için doğru cevabın olmadığı sorgular aynı Recall
 tablosuna karıştırılmamalı.
 
+## Filtreli vs filtresiz karşılaştırma
+
+```
+python -m scripts.eval_retrieval --golden poc/golden_set/queries.jsonl --compare-filters
+```
+
+Aynı golden set'i iki kez çalıştırır: bir kez normal hat (vLLM ayrıştırma +
+yapısal filtre + gevşetme), bir kez yapısal filtre tamamen kapalı (ham sorgu
+metni doğrudan embedding'e gider). İkisinin Recall@k/MRR'ını yan yana basar.
+Bu, docs/worklog_2026-07-28.md'deki hard-filtre ölçümünün (sentetik +
+N=21 gerçek veri) devamıdır — burada gerçek pipeline ve daha büyük bir
+korpusla tekrarlanır.
+
 ## Örneklem büyüklüğü uyarısı
 
 Bu projede N=21'lik bir ölçekte **tek bir klibin sıra değiştirmesinin Recall'ü

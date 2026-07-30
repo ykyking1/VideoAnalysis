@@ -31,6 +31,9 @@ from common.console import use_utf8_stdout
 from common import config
 from common.qdrant_store import get_client
 from ingest.activities.clip_embedding import embed_text
+from query.hybrid_search import search
+from query.interval_merge import merge_matches
+from query.llm_parser import ParsedQuery, StructuredFilters, parse_query
 from query.pipeline import run_query
 
 use_utf8_stdout()
@@ -95,6 +98,86 @@ def evaluate_golden(path: Path, top_k: int) -> int:
     return 0
 
 
+def _recall_and_mrr(cases: list[dict], top_k: int, use_filter: bool) -> dict:
+    hits = {k: 0 for k in RECALL_LEVELS}
+    reciprocal_ranks: list[float] = []
+    relaxed_count = 0
+
+    for case in cases:
+        if use_filter:
+            parsed = parse_query(case["query"])
+        else:
+            # Yapisal filtre YOK - LLM ayristirmasi bile devre disi, sorgunun
+            # tamami ham metin olarak embedding'e gidiyor. Bu, filtrenin
+            # kendisinin katkisini/maliyetini izole eder (LLM ayristirma
+            # kalitesinden ayri bir degisken).
+            parsed = ParsedQuery(filters=StructuredFilters(),
+                                  semantic_text=case["query"], raw_query=case["query"])
+
+        result = search(parsed, top_k=top_k)
+        if result.was_relaxed:
+            relaxed_count += 1
+        intervals = merge_matches(result.matches)
+
+        rank = None
+        for i, interval in enumerate(intervals, start=1):
+            if interval.video_id != case["video_id"]:
+                continue
+            if _overlaps(interval.t_start, interval.t_end,
+                          float(case["t_start"]), float(case["t_end"])):
+                rank = i
+                break
+
+        if rank is None:
+            reciprocal_ranks.append(0.0)
+            continue
+        reciprocal_ranks.append(1.0 / rank)
+        for k in RECALL_LEVELS:
+            if rank <= k:
+                hits[k] += 1
+
+    n = len(cases)
+    return {"hits": hits, "mrr": sum(reciprocal_ranks) / n, "relaxed": relaxed_count, "n": n}
+
+
+def evaluate_filter_ablation(path: Path, top_k: int) -> int:
+    """Ayni golden set uzerinde FILTRELI vs FILTRESIZ Recall karsilastirmasi.
+
+    docs/worklog_2026-07-28.md'deki hard-filtre olcumunun (sentetik + N=21
+    gercek veri) devami - burada gercek pipeline (vLLM ayristirma dahil)
+    ve daha buyuk bir korpusla tekrarlaniyor. N<200 ise sonuc EGILIM
+    sinyalidir, "model A B'den iyi" turu kesin bir iddia degildir."""
+    if not path.exists():
+        print(f"Golden set bulunamadi: {path}")
+        print("Bkz. poc/golden_set/README.md - format ve tasarim rehberi orada.")
+        return 1
+
+    cases = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    if not cases:
+        print(f"{path} bos")
+        return 1
+
+    with_filter = _recall_and_mrr(cases, top_k, use_filter=True)
+    without_filter = _recall_and_mrr(cases, top_k, use_filter=False)
+    n = with_filter["n"]
+
+    print(f"--- Filtre ablasyonu ({path.name}, N={n}) ---")
+    print(f"{'':10}{'FILTRELI':>12}{'FILTRESIZ':>12}{'fark':>10}")
+    for k in RECALL_LEVELS:
+        wf, wof = with_filter["hits"][k], without_filter["hits"][k]
+        diff = 100 * (wf - wof) / n
+        print(f"Recall@{k:<3}{100*wf/n:>11.1f}%{100*wof/n:>11.1f}%{diff:>+9.1f}p")
+    print(f"{'MRR':<10}{with_filter['mrr']:>12.3f}{without_filter['mrr']:>12.3f}"
+          f"{with_filter['mrr']-without_filter['mrr']:>+10.3f}")
+    print(f"\nFiltre gevsetilen sorgu (filtreli modda): {with_filter['relaxed']}/{n}")
+
+    if n < 200:
+        print(f"\nUYARI: N={n} < proje-ozeti.md §7'nin onerdigi 200-500. "
+              f"Egilim sinyali olarak okuyun, kesin karsilastirma olarak degil "
+              f"(docs/worklog_2026-07-28.md'deki N=21 olcumunde ayni uyari gecerliydi).")
+    return 0
+
+
 def evaluate_self_retrieval(top_k: int) -> int:
     client = get_client()
     collection = config.QDRANT_COLLECTION
@@ -147,9 +230,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--golden", type=Path, help="JSONL golden set dosyasi")
     ap.add_argument("--self-retrieval", action="store_true")
+    ap.add_argument("--compare-filters", action="store_true",
+                     help="--golden ile birlikte: filtreli vs filtresiz Recall karsilastirmasi")
     ap.add_argument("--top-k", type=int, default=10)
     args = ap.parse_args()
 
+    if args.golden and args.compare_filters:
+        return evaluate_filter_ablation(args.golden, args.top_k)
     if args.golden:
         return evaluate_golden(args.golden, args.top_k)
     if args.self_retrieval:
