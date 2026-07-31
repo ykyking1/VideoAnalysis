@@ -72,6 +72,13 @@ def _resolve_dtype() -> torch.dtype:
 def _get_embedder():
     global _embedder
     if _embedder is None:
+        # Model soguk onbellekte ilk kez indirilirken (snapshot_download,
+        # dakikalar surebilir - gercek calistirmada 28dk olculdu, yavas agda)
+        # heartbeat atilmazsa Temporal bunu tikanma sanip aktiviteyi iptal
+        # eder ve tum retry'lar AYNI sekilde basarisiz olur (indirme her
+        # denemede tekrar heartbeat'siz kalir). Once heartbeat atip
+        # sayacini sifirliyoruz.
+        _heartbeat("embedding modeli yukleniyor/indiriliyor")
         model_dir = _resolve_model_dir()
         scripts_dir = str(Path(model_dir) / "scripts")
         if scripts_dir not in sys.path:

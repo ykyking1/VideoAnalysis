@@ -129,7 +129,11 @@ RERANK_ENABLED = _env_bool("RERANK_ENABLED", False)
 RERANK_CANDIDATES = _env_int("RERANK_CANDIDATES", 10)
 
 # --- Kafka (ingest tetikleyici, proje-ozeti.md §3.1) ---
-KAFKA_BOOTSTRAP_SERVERS = _env("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+# 29092 = docker-compose.yml'deki EXTERNAL listener (host'tan erisim icin).
+# 9092, Docker agi icinde "kafka:9092" olarak advertise ediliyor - host'tan
+# cozulemez. Host disinda (ayni Docker agi icinde) calisan bir surec icin
+# KAFKA_BOOTSTRAP_SERVERS=kafka:9092 gerekir.
+KAFKA_BOOTSTRAP_SERVERS = _env("KAFKA_BOOTSTRAP_SERVERS", "localhost:29092")
 KAFKA_TOPIC = _env("KAFKA_TOPIC", "video-ingest")
 KAFKA_GROUP_ID = _env("KAFKA_GROUP_ID", "video-ingest-workers")
 

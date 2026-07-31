@@ -29,7 +29,7 @@ def main() -> int:
 
     notification = NotificationConfig(
         queue_config_list=[
-            QueueConfig(ARN, ["s3:ObjectCreated:*"], config_id="video-ingest"),
+            QueueConfig(["s3:ObjectCreated:*"], config_id="video-ingest", queue=ARN),
         ]
     )
     try:

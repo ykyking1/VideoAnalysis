@@ -38,6 +38,12 @@ def _get_model():
     if _model is None:
         from ultralytics import YOLO
 
+        # Agirlik dosyasi ilk calistirmada indiriliyor (dakikalar surebilir,
+        # ag hizina bagli) - indirme sirasinda heartbeat atilmazsa Temporal
+        # bunu tikanma sanip aktiviteyi iptal eder (gercek calistirmada
+        # bulundu: embed_clips'te ayni sorun 28dk'lik soguk indirmede
+        # heartbeat_timeout'u asip is akisini dusurdu).
+        _heartbeat("YOLO modeli yukleniyor/indiriliyor")
         _log(f"YOLO modeli yukleniyor: {config.YOLO_MODEL}")
         _model = YOLO(config.YOLO_MODEL)
     return _model

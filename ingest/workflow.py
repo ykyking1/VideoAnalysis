@@ -70,14 +70,21 @@ class VideoIngestWorkflow:
             args=(video_id, proxy_key, windows),
             start_to_close_timeout=timedelta(hours=8),
             retry_policy=GPU_RETRY,
-            heartbeat_timeout=timedelta(minutes=10),
+            # 30dk: model soguk onbellekte ilk kez indirilirken (dakikalar
+            # surebilir, gercek calistirmada 28dk olculdu) tek bir heartbeat
+            # indirme BASLARKEN atiliyor (bkz. clip_embedding._get_embedder)
+            # ama indirme SIRASINDA ikinci bir heartbeat yok - bu yuzden
+            # payi genis tutuyoruz, 10dk'nin retry'larla asilmasi (kok neden
+            # cozulmeden) tekrar yasanmasin diye.
+            heartbeat_timeout=timedelta(minutes=30),
         )
         visual_task = workflow.execute_activity(
             extract_visual_fields,
             args=(video_id, proxy_key, windows),
             start_to_close_timeout=timedelta(hours=4),
             retry_policy=GPU_RETRY,
-            heartbeat_timeout=timedelta(minutes=10),
+            # YOLO agirligi da ilk calistirmada indiriliyor - ayni gerekce.
+            heartbeat_timeout=timedelta(minutes=30),
         )
         caption_task = workflow.execute_activity(
             generate_captions,

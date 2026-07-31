@@ -66,6 +66,11 @@ services:
     image: apache/kafka:latest
     ports:
       - "9092:9092"
+      # EXTERNAL listener - host'tan (Docker aginin disindan) baglanan
+      # sureclerin (ingest.worker, ingest.kafka_consumer) kullanmasi gereken
+      # port. 9092 sadece Docker agi icinde calisir - advertised listener
+      # "kafka:9092" host'tan cozulemez.
+      - "29092:29092"
     environment:
       KAFKA_NODE_ID: "1"
       KAFKA_PROCESS_ROLES: "broker,controller"
