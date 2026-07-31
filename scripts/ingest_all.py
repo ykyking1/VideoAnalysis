@@ -31,7 +31,7 @@ use_utf8_stdout()
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".avi", ".mpg", ".mpeg", ".m4v")
 
 
-def _natural_sort_key(path: Path) -> list:
+def natural_sort_key(path: Path) -> list:
     # "sds_train_10" harf-sirasinda "sds_train_2"den ONCE gelir - --limit N
     # verildiginde kullanicinin bekledigi "ilk N" yerine keyfi bir altkume
     # secilmesine yol aciyordu. Sayisal parcalari int'e cevirip dogal siraya
@@ -67,7 +67,7 @@ async def main_async(args) -> int:
         return 1
 
     candidates = sorted((p for p in folder.iterdir()
-                         if p.suffix.lower() in VIDEO_EXTENSIONS), key=_natural_sort_key)
+                         if p.suffix.lower() in VIDEO_EXTENSIONS), key=natural_sort_key)
     if not candidates:
         print(f"{folder} icinde video bulunamadi "
               f"(aranan uzantilar: {', '.join(VIDEO_EXTENSIONS)})")
