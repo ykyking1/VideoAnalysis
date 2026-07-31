@@ -93,7 +93,13 @@ PROXY_USE_NVDEC = _env_bool("PROXY_USE_NVDEC", True)
 PROXY_USE_NVENC = _env_bool("PROXY_USE_NVENC", True)
 
 # --- Görsel alanlar (proje-ozeti.md §3.1 madde 4) ---
-YOLO_MODEL = _env("YOLO_MODEL", "yolo26n.pt")
+# YOLO_MODEL: "n" (nano) varsayılan denendi, SeaDroneSee'de MAE=1.33 tekne/klip
+# verdi (21 klip, manifest.json gerçek sayımına karşı). "s" (small) aynı
+# eşikte MAE'yi 0.76'ya düşürdü (~%43 iyileşme, birebir doğru oranı 3/21'den
+# 8/21'e çıktı) - ölçüldü, tahmin değil (bkz. docs/worklog_2026-07-30.md).
+# Eşiği (YOLO_CONF) düşürmek TERSİNE MAE'yi kötüleştirdi (0.25→0.15→0.10 ile
+# 1.33→1.67→2.43) - dokunmayın.
+YOLO_MODEL = _env("YOLO_MODEL", "yolo26s.pt")
 YOLO_SAMPLE_FRAMES = _env_int("YOLO_SAMPLE_FRAMES", 3)
 YOLO_CONF = _env_float("YOLO_CONF", 0.25)
 
