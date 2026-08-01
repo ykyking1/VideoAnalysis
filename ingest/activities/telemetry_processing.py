@@ -39,8 +39,6 @@ from common.minio_client import download_temp
 from ingest.activities.types import TelemetryWindow
 
 TELEMETRY_OFFSET_S = float(os.environ.get("TELEMETRY_OFFSET_S", "0.0"))
-WINDOW_S = config.WINDOW_S
-STRIDE_S = config.STRIDE_S
 
 _MAVLINK_TYPES = ["GLOBAL_POSITION_INT", "GIMBAL_DEVICE_ATTITUDE_STATUS", "MOUNT_STATUS"]
 
@@ -54,15 +52,23 @@ def probe_duration(path: str) -> float:
 
 
 def build_windows(duration_s: float) -> list[TelemetryWindow]:
-    """Sabit uzunluklu, WINDOW_S/STRIDE_S pencereleri üretir."""
+    """Sabit uzunluklu, config.WINDOW_S/STRIDE_S pencereleri üretir.
+
+    Deger burada, CAGRI ANINDA okunuyor - modul seviyesinde sabitlenirse
+    (eskiden oyleydi) bir notebook/REPL'de config.WINDOW_S degistirilip
+    common.config reload edildiginde bu modul zaten import edilmis oldugu
+    icin eski deger kalirdi (gercek Kaggle testinde bulundu: 60sn pencere
+    denemesi sessizce 8sn'de kalmaya devam etmisti)."""
+    window_s = config.WINDOW_S
+    stride_s = config.STRIDE_S
     windows: list[TelemetryWindow] = []
     t_start = 0.0
     while t_start < duration_s:
-        t_end = min(t_start + WINDOW_S, duration_s)
+        t_end = min(t_start + window_s, duration_s)
         windows.append(TelemetryWindow(t_start=t_start, t_end=t_end))
         if t_end >= duration_s:
             break
-        t_start += STRIDE_S
+        t_start += stride_s
     return windows
 
 
