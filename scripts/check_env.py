@@ -200,7 +200,33 @@ def check_services() -> None:
 
 
 def check_config() -> None:
+    import pathlib
+
     from common import config
+
+    if pathlib.Path(".env").exists():
+        try:
+            import dotenv  # noqa: F401
+            report(OK, ".env bulundu ve python-dotenv kurulu (yukleniyor)")
+        except ImportError:
+            report(WARN, ".env dosyasi var ama python-dotenv KURULU DEGIL - "
+                         "icindeki degerler SESSIZCE yok sayiliyor "
+                         "(pip install python-dotenv)")
+
+    # Yerel model yolu olarak ayarlanmis (internetsiz kurulum) alanlarin
+    # gercekten var olup olmadigini kontrol et - yoksa ilk kullanimda
+    # (ingest/vLLM baslatma) internete gitmeye calisip sessizce takilir.
+    for name, value in (("EMBEDDING_MODEL_DIR", config.EMBEDDING_MODEL_DIR),
+                         ("PARSE_MODEL", config.PARSE_MODEL),
+                         ("YOLO_MODEL", config.YOLO_MODEL)):
+        if value and ("/" in value or "\\" in value) and not value.startswith(("Qwen/", "http")):
+            if pathlib.Path(value).exists():
+                report(OK, f"{name} yerel yola isaret ediyor ve mevcut: {value}")
+            else:
+                report(FAIL, f"{name}={value} bir dosya yolu gibi duruyor ama "
+                             f"BULUNAMADI - internetsiz kurulumda bu, ilk "
+                             f"kullanimda internete gitmeye calisip sessizce "
+                             f"takilmaya yol acar")
 
     if config.STRIDE_S < config.WINDOW_S:
         overlap = 1 - config.STRIDE_S / config.WINDOW_S

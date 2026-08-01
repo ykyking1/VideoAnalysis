@@ -1,0 +1,24 @@
+# Internetsiz kurulum icin override. Tum imajlar `docker load` ile yerel
+# olarak yuklendikten SONRA kullanilir - `pull_policy: never` Docker'in
+# internete cikip imaji cekmeye CALISMASINI bile engeller (aksi halde
+# yerel imaj eksikse/etiket uyusmazsa sessizce internete cikmaya calisip
+# internetsiz makinede anlasilmasi zor bir timeout'ta takilir).
+#
+# Kullanim:
+#     docker compose -f docker-compose.yml -f docker-compose.offline.yml up -d
+# (scripts/setup.sh --offline bunu otomatik yapar)
+services:
+  minio:
+    pull_policy: never
+  qdrant:
+    pull_policy: never
+  postgres:
+    pull_policy: never
+  kafka:
+    pull_policy: never
+  temporal:
+    pull_policy: never
+  temporal-ui:
+    pull_policy: never
+  vllm:
+    pull_policy: never

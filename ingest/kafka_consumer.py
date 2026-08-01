@@ -28,7 +28,7 @@ from ingest.workflow import VideoIngestWorkflow
 
 log = logging.getLogger("ingest.kafka_consumer")
 
-VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".avi", ".mpg", ".mpeg", ".m4v")
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".m2ts", ".mts", ".avi", ".mpg", ".mpeg", ".m4v")
 
 
 def video_id_from_key(object_key: str) -> str:

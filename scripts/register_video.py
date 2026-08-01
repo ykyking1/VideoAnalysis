@@ -18,7 +18,7 @@ from pathlib import Path
 from common import config
 from common.minio_client import backend_name, ensure_buckets, get_client
 
-VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".avi", ".mpg", ".mpeg", ".m4v")
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".m2ts", ".mts", ".avi", ".mpg", ".mpeg", ".m4v")
 
 
 def _record_state(video_id: str, source_path: str) -> None:

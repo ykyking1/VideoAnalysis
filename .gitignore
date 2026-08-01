@@ -8,6 +8,7 @@ venv/
 poc/golden_set/data/
 /data/
 /models/
+/offline_bundle/
 
 # YOLO agirlik dosyalari (calisma aninda otomatik indirilir)
 *.pt

@@ -28,7 +28,7 @@ from common.console import use_utf8_stdout
 
 use_utf8_stdout()
 
-VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".avi", ".mpg", ".mpeg", ".m4v")
+VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".ts", ".m2ts", ".mts", ".avi", ".mpg", ".mpeg", ".m4v")
 
 
 def natural_sort_key(path: Path) -> list:
@@ -103,8 +103,9 @@ async def main_async(args) -> int:
     if args.limit is not None:      # 0 falsy - `if args.limit` yanlis olurdu
         plan = plan[:args.limit]
         total_s = sum(i.get("duration_s") or 0.0 for _, _, i in plan)
+    from common import config as _config
     print(f"\nToplam video suresi: {total_s/3600:.2f} saat "
-          f"(~{total_s/8:.0f} pencere)\n")
+          f"(~{total_s/_config.WINDOW_S:.0f} pencere)\n")
 
     started = time.time()
     basarisiz = []

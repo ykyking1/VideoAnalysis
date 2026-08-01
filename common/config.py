@@ -5,6 +5,19 @@ env ile geçersiz kılınabilir - kod içinde sabit bağlantı bilgisi yok.
 """
 import os
 
+# python-dotenv requirements.txt'te vardi ama HICBIR YERDE cagrilmiyordu -
+# .env dosyasi sadece Docker Compose'un kendi degisken degistirmesi icin
+# etkiliydi, Python tarafi (bu modul) hic okumuyordu. scripts/setup.sh
+# --offline modu .env'e yerel model yollarini (PARSE_MODEL, EMBEDDING_MODEL_DIR
+# vb.) yazsa da bu satir olmadan hicbir etkisi olmuyordu - gercek calistirmada
+# bulundu. find_dotenv ile once .env, sonra gercek shell env degiskenleri
+# (override=False - shell'de zaten set edilmisse ona dokunmuyoruz) yukleniyor.
+try:
+    from dotenv import find_dotenv, load_dotenv
+    load_dotenv(find_dotenv(usecwd=True), override=False)
+except ImportError:
+    pass
+
 
 def _env(name: str, default: str) -> str:
     return os.environ.get(name, default)

@@ -2,16 +2,33 @@
 # Tek komutluk kurulum: venv + bagimliliklar + Docker servisleri + depo hazirligi.
 #
 #     ./scripts/setup.sh
+#     ./scripts/setup.sh --offline /yol/offline_bundle   # internet YOK
 #
 # Idempotent - tekrar tekrar calistirilabilir, var olani bozmaz.
 # Ubuntu/Debian (ve WSL2 icindeki Ubuntu) icin. Sistem paketleri eksikse
 # ne kurmaniz gerektigini soyler, kendisi sudo ile bir sey kurmaz.
+#
+# --offline: internet olan bir makinede once
+#     ./scripts/prepare_offline_bundle.sh
+# calistirip cikan offline_bundle/ klasorunu (USB/ag ile) bu makineye
+# tasiyin, sonra buraya yolunu verin. Docker/ffmpeg/git/python3'un
+# KENDISI de sudo ile kurulmadigi icin bunlarin offline_bundle disinda,
+# ayrica (ornegin apt-offline ile) hazirlanmis olmasi gerekir - detay
+# docs/internetsiz-kurulum.md.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 say()  { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 warn() { printf '\033[33m[!] %s\033[0m\n' "$*"; }
 die()  { printf '\033[31m[HATA] %s\033[0m\n' "$*" >&2; exit 1; }
+
+OFFLINE_DIR=""
+if [ "${1:-}" = "--offline" ]; then
+    OFFLINE_DIR="${2:-}"
+    [ -n "$OFFLINE_DIR" ] && [ -d "$OFFLINE_DIR" ] || die "--offline icin gecerli bir klasor yolu verin (bkz. scripts/prepare_offline_bundle.sh)."
+    OFFLINE_DIR="$(cd "$OFFLINE_DIR" && pwd)"
+    say "INTERNETSIZ KURULUM: $OFFLINE_DIR"
+fi
 
 # --- 1. Sistem on kosullari (kurmuyoruz, sadece kontrol) -------------------
 say "Sistem on kosullari"
@@ -52,19 +69,29 @@ say "Python ortami"
 # shellcheck disable=SC1091
 source .venv/bin/activate
 pip install --upgrade -q pip
-echo "requirements.txt kuruluyor (CUDA'li torch dahil, ilk seferde uzun surer)..."
-pip install -q -r requirements.txt
-echo "vLLM kuruluyor (yapisal filtreleme)..."
-# vLLM v0.20+ "libtorch stable ABI"ye gecti, bu surumlerin _C_stable_libtorch
-# uzantisi CUDA 13 runtime'a SABIT bagimli - --torch-backend=auto bunu
-# ETKILEMIYOR (denendi, "libcudart.so.13" hatasi devam ediyor). PyPI'da
-# gercek bir CUDA13 runtime paketi de yok. requirements-serving.txt bu
-# yuzden gecis ONCESI son surume (0.8.3) sabitli - detay orada.
-pip install -q uv
-uv pip install -q -r requirements-serving.txt --torch-backend=auto || warn \
-    "vLLM kurulamadi - Linux disi bir ortamda olabilirsiniz ya da CUDA surumu
-     tespit edilemedi. Arama yine calisir, sadece yapisal filtreleme devre disi
-     kalir. Detay ve alternatifler: requirements-serving.txt"
+
+if [ -n "$OFFLINE_DIR" ]; then
+    [ -d "$OFFLINE_DIR/wheels" ] || die "$OFFLINE_DIR/wheels yok - prepare_offline_bundle.sh dogru calisti mi?"
+    echo "requirements.txt + requirements-serving.txt yerel wheel'lerden kuruluyor (--no-index)..."
+    pip install -q --no-index --find-links="$OFFLINE_DIR/wheels" -r requirements.txt
+    pip install -q --no-index --find-links="$OFFLINE_DIR/wheels" -r requirements-serving.txt || warn \
+        "vLLM yerel wheel'lerden kurulamadi - prepare_offline_bundle.sh'in CIKTISI ile
+         BU makinenin mimarisi/Python surumu uyusmuyor olabilir. Arama yine calisir,
+         sadece yapisal filtreleme devre disi kalir."
+else
+    echo "requirements.txt kuruluyor (CUDA'li torch dahil, ilk seferde uzun surer)..."
+    pip install -q -r requirements.txt
+    echo "vLLM kuruluyor (yapisal filtreleme)..."
+    # vLLM v0.20+ "libtorch stable ABI"ye gecti - kendi CUDA13 runtime'ina
+    # sabit bagimli. Cozum eski surume sabitlemek DEGIL (0.8.3 -> torch==2.6.0
+    # PyPI'dan kaldirilmis, dead-end): guncel vLLM'i ihtiyaci olan torch
+    # surumuyle (2.11.0) ACIKCA birlikte istiyoruz - detay requirements-serving.txt'te.
+    pip install -q uv
+    uv pip install -q -r requirements-serving.txt --torch-backend=auto || warn \
+        "vLLM kurulamadi - Linux disi bir ortamda olabilirsiniz ya da CUDA surumu
+         tespit edilemedi. Arama yine calisir, sadece yapisal filtreleme devre disi
+         kalir. Detay ve alternatifler: requirements-serving.txt"
+fi
 
 # --- 3. .env ---------------------------------------------------------------
 say "Yapilandirma"
@@ -75,9 +102,46 @@ else
     echo ".env zaten var, dokunulmadi."
 fi
 
+if [ -n "$OFFLINE_DIR" ]; then
+    say "Model yollari .env'e yaziliyor (yerel, indirme yok)"
+    python3 - <<PY
+import pathlib, re
+p = pathlib.Path('.env')
+lines = p.read_text(encoding='utf-8').splitlines()
+def setkv(lines, k, v):
+    out, done = [], False
+    for l in lines:
+        if re.match(rf'^{k}=', l):
+            out.append(f'{k}={v}'); done = True
+        else:
+            out.append(l)
+    if not done: out.append(f'{k}={v}')
+    return out
+lines = setkv(lines, 'EMBEDDING_MODEL_DIR', '$OFFLINE_DIR/models/embedding')
+lines = setkv(lines, 'YOLO_MODEL', '$OFFLINE_DIR/models/yolo/yolo26s.pt')
+lines = setkv(lines, 'PARSE_MODEL', '$OFFLINE_DIR/models/parse')
+p.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+PY
+    echo "EMBEDDING_MODEL_DIR, YOLO_MODEL, PARSE_MODEL .env'de yerel yollara ayarlandi."
+    if [ -d "$OFFLINE_DIR/models/vl" ]; then
+        sed -i "s|^VLM_MODEL=.*|VLM_MODEL=$OFFLINE_DIR/models/vl|" .env 2>/dev/null || \
+            echo "VLM_MODEL=$OFFLINE_DIR/models/vl" >> .env
+        echo "VLM_MODEL de yerel yola ayarlandi (caption/rerank icin)."
+    fi
+fi
+
 # --- 4. Docker servisleri --------------------------------------------------
 say "Altyapi servisleri (Qdrant, MinIO, Postgres, Kafka, Temporal)"
-docker compose up -d
+if [ -n "$OFFLINE_DIR" ]; then
+    echo "Docker imajlari yerel tar'lardan yukleniyor (internet YOK)..."
+    for f in "$OFFLINE_DIR"/docker_images/*.tar; do
+        echo "  yukleniyor: $(basename "$f")"
+        docker load -i "$f" >/dev/null
+    done
+    docker compose -f docker-compose.yml -f docker-compose.offline.yml up -d
+else
+    docker compose up -d
+fi
 echo "Servislerin hazir olmasi bekleniyor..."
 for _ in $(seq 1 60); do
     if python - <<'PY' >/dev/null 2>&1
