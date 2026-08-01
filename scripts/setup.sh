@@ -39,6 +39,12 @@ done
 if [ ${#missing[@]} -gt 0 ]; then
     echo "Eksik: ${missing[*]}"
     echo
+    if [ -n "$OFFLINE_DIR" ]; then
+        echo "  --offline modda bunlarin internetten kurulmasi beklenmez."
+        echo "  Once (bu script'ten ONCE, root ile):"
+        echo "    sudo ./scripts/install_system_offline.sh $OFFLINE_DIR"
+        die "install_system_offline.sh'i calistirip tekrar deneyin."
+    fi
     echo "  sudo apt update"
     echo "  sudo apt install -y git ffmpeg python3-venv python3-pip curl"
     echo "  curl -fsSL https://get.docker.com | sudo sh"

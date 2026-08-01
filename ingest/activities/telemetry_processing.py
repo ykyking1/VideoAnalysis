@@ -1,12 +1,15 @@
 """Telemetri işleme: pymavlink + polars ile `.tlog`/MAVLink log ayrıştırma,
-8sn pencere / 8sn kaydırma (proje-ozeti.md §3.1 madde 2).
+60sn pencere / 60sn kaydırma (proje-ozeti.md §3.1 madde 2).
 
-PENCERELEME: 8sn/8sn, örtüşmesiz. 2026-07-29'da %50 örtüşmeli (4sn kaydırma)
+PENCERELEME: 60sn/60sn, örtüşmesiz (config.WINDOW_S/STRIDE_S, çağrı anında
+okunur - bkz. build_windows()). 2026-07-29'da %50 örtüşmeli (4sn kaydırma)
 şemadan değiştirildi: teyit edilen envanterde (~300.000 video × 3-5sa, bkz. §8)
 %50 örtüşme ~1 milyar vektör demekti; kaydırmayı pencere uzunluğuna eşitlemek
 vektör sayısını, embedding GPU-saatini ve indeks boyutunu yarıya indiriyor.
-Recall'e etkisi ÖLÇÜLMEDİ (golden set gerekiyor, §7) - iyileştirme fırsatı
-olarak §9 madde 1 (sahne sınırına yaslanmış chunking) hâlâ açık.
+Pencere boyutunun kendisi (8sn→60sn) 2026-08-01'de SINIRLI kanıtla değiştirildi
+- bkz. docs/worklog_2026-08-01.md ve CLAUDE.md için caveat'lar. Recall'e etkisi
+tam ÖLÇÜLMEDİ (golden set gerekiyor, §7) - iyileştirme fırsatı olarak §9
+madde 1 (sahne sınırına yaslanmış chunking) hâlâ açık.
 
 TÜRETİLMİŞ ALANLAR:
 - avg_speed_kmh  : GLOBAL_POSITION_INT vx/vy/vz'den

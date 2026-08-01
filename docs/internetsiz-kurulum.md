@@ -136,6 +136,16 @@ bulunmadığını ve internete hiç çıkılmadığını kontrol eder.
 - ffmpeg'in NVENC/NVDEC desteğiyle geldiğinden emin olun (bazı Ubuntu
   paketleri donanım kodlayıcıyı içermeyen "minimal" derlemeler olabilir) -
   bu proje kodu bunu kontrol etmiyor, sadece yazılım koduna geri çekiliyor.
+- `requirements-serving.txt` (vLLM/torch) online kurulumda `uv pip install
+  --torch-backend=auto` ile kuruluyor - bu, **çalıştığı makinenin** CUDA
+  sürücüsünü algılayıp doğru torch derlemesini seçiyor. Offline akışta ise
+  `pip download` **hazırlık makinesinde** çalışıyor (torch backend algılama
+  YOK, düz PyPI varsayılanı iniyor) ve hedefe `--no-index` ile kuruluyor -
+  yani seçim hedefin değil hazırlık makinesinin (ya da PyPI varsayılanının)
+  GPU/sürücü durumuna göre yapılmıyor. Çoğu güncel NVIDIA sürücüsüyle
+  muhtemelen çalışır ama bu, requirements-serving.txt'teki zaten var olan
+  "vLLM KISMEN doğrulandı" belirsizliğine ek, offline'a özgü bir risktir -
+  doğrulanmadı.
 - `install_system_offline.sh`'in Docker statik-ikili + elle yazılmış systemd
   birimi yolu gerçek bir makinede hiç denenmedi - resmi `docker-ce` apt
   paketinin kurduğu birimin sadeleştirilmiş bir taklidi. `docker compose`
