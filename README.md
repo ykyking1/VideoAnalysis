@@ -154,7 +154,7 @@ alınmamalı**. Ölçtüğümüz somut veri:
 | | Değer | Kaynak |
 |---|---|---|
 | Arşiv büyüklüğü | ~300.000 video × 3-5 saat ≈ **900K-1.5M saat** | Kullanıcı teyidi (2026-07-29) |
-| Pencere sayısı (8sn/8sn) | **~405M-675M vektör** | Yukarıdakinden hesap |
+| Pencere sayısı (60sn/60sn) | **~54M-90M vektör** | Yukarıdakinden hesap |
 | Ölçülen embedding hızı | **~0.7x gerçek-zaman** (T4, 1080p, batch'siz) | Colab ölçümü |
 | proje-ozeti.md §8 varsayımı | 40x gerçek-zaman | **Doğrulanmadı** |
 
@@ -184,7 +184,7 @@ MinIO (yeni video)
                                           │
         ┌─────────────────────────────────┴──────────────────────────────┐
         │ 1. proxy uretimi      ffmpeg + NVDEC/NVENC, 360p HEVC          │
-        │ 2. telemetri          pymavlink -> 8sn/8sn pencere + turetilmis│
+        │ 2. telemetri          pymavlink -> 60sn/60sn pencere + turetilmis│
         │                       alanlar (hiz, irtifa, gunes acisi, deniz)│
         │ 3. embedding          Qwen3-VL-Embedding-2B -> pencere/vektor  │
         │ 4. gorsel alanlar     YOLO26 -> vehicle_count                  │
@@ -251,16 +251,24 @@ Retrieval kalitesi açısından "en iyi" olduğu **iddia edilmiyor** —
 proje-ozeti.md §5'in gerektirdiği golden set karşılaştırması
 (InternVideo2/VideoPrism/LanguageBind dahil) hâlâ yapılmadı.
 
-### Pencereleme: 8sn/8sn (örtüşmesiz)
+### Pencereleme: 60sn/60sn (örtüşmesiz)
 
 %50 örtüşmeli 4sn kaydırmadan değiştirildi. Gerçek envanterde (~1.2M saat)
 örtüşme ~1 milyar vektör demekti; kaydırmayı pencereye eşitlemek vektör
 sayısını, GPU maliyetini ve indeks boyutunu **yarıya** indiriyor.
 
-Recall'e etkisini N=6 gerçek klipte test ettik: örtüşmesiz şema **daha kötü
-çıkmadı** (Recall@3 %50 vs %33). Ancak N=6 güvenilir bir sonuç değil —
-tek bir klibin sırası bu farkı tamamen açıklıyor. Gerçek karar golden set
-gerektiriyor (§7).
+Örtüşmesiz şemanın Recall'e etkisini N=6 gerçek klipte test ettik: **daha
+kötü çıkmadı** (Recall@3 %50 vs %33) — ama N=6 güvenilir değil, tek bir
+klibin sırası bu farkı tamamen açıklıyor.
+
+**Pencere boyutunun kendisi (8sn→60sn) 2026-08-01'de değiştirildi —
+SINIRLI KANIT.** Birleştirilmiş (21 SeaDroneSee klibi uç uca, 914.8sn)
+tek bir uzun videoda N=10 sorguyla ölçüldü: Recall@10 %20→%70, MRR
+0.083→0.408 — büyük ve yön olarak tutarlı, ama video yapay birleştirme,
+kısa/ani olayların 60sn'de kaybolup kaybolmadığı hiç test edilmedi.
+proje-ozeti.md §9'daki çok-ölçekli (8sn+60sn ayrı katman) fikri bunu daha
+temiz çözebilir, henüz uygulanmadı. Gerçek karar golden set gerektiriyor
+(§7). Detay: docs/worklog_2026-08-01.md.
 
 ### Filtreleme: hard + otomatik gevşetme
 

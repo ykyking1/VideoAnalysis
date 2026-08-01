@@ -81,10 +81,25 @@ EMBEDDING_BATCH_SIZE = _env_int("EMBEDDING_BATCH_SIZE", 8)
 EMBEDDING_DTYPE = _env("EMBEDDING_DTYPE", "auto")  # auto | float16 | bfloat16 | float32
 
 # --- Pencereleme (proje-ozeti.md §3.1 madde 2) ---
-# 8sn/8sn ortusmesiz: gercek envanterde (§8) %50 ortusmeli 4sn kaydirma ~1
-# milyar vektor demekti; kaydirmayi pencereye esitlemek bunu yariya indiriyor.
-WINDOW_S = _env_float("WINDOW_S", 8.0)
-STRIDE_S = _env_float("STRIDE_S", 8.0)
+# Ortusmesiz (STRIDE_S == WINDOW_S): gercek envanterde (§8) %50 ortusmeli
+# kaydirma ~1 milyar vektor demekti; kaydirmayi pencereye esitlemek bunu
+# yariya indiriyor.
+#
+# 60sn/60sn - DIKKAT, SINIRLI KANIT: 8sn'den 60sn'ye SINIRLI kanitla
+# degistirildi (2026-08-01). Birlestirilmis (21 SeaDroneSee klibi uc uca,
+# 914.8sn, N=10 sorgu) tek bir uzun videoda olculdu: Recall@10 %20->%70,
+# MRR 0.083->0.408 - buyuk ve yon olarak tutarli bir sinyal, ama:
+#   - N=10 kucuk
+#   - video YAPAY birlestirme, gercek kesintisiz cekim degil
+#   - sorgularin hepsi onlarca saniye suren olaylar - KISA/ANI bir olayin
+#     (birkac saniye) 60sn'lik pencerede kaybolup kaybolmayacagi HIC
+#     test edilmedi
+#   - yapisal alanlarin (agl_m, avg_speed_kmh) 60sn'de ortalama alinarak
+#     bulanmasi HIC test edilmedi (once skip-visual ile calisildi)
+# Detay: docs/worklog_2026-08-01.md. Gercek, kesintisiz uzun ucus
+# goruntusu elde edilince tekrar dogrulanmali.
+WINDOW_S = _env_float("WINDOW_S", 60.0)
+STRIDE_S = _env_float("STRIDE_S", 60.0)
 
 # --- Proxy üretimi (proje-ozeti.md §3.1 madde 1, §4) ---
 PROXY_HEIGHT = _env_int("PROXY_HEIGHT", 360)

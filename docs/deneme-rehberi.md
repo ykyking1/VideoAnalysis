@@ -155,13 +155,13 @@ islenebilir video suresi = olculen_kat x ayirabildiginiz_saat
 
 ### Hedef korpus büyüklüğü
 
-Önemli olan video sayısı değil, **pencere sayısı** (8sn/8sn → saat başına 450):
+Önemli olan video sayısı değil, **pencere sayısı** (60sn/60sn → saat başına 60):
 
 | Video süresi | Pencere | Ne test eder |
 |---|---|---|
-| ~2 saat | ~900 | Sadece mekanik doğrulama — her sorgu her şeyi bulur |
-| **20-50 saat** | **9K-22K** | **İyi denge** — HNSW anlam kazanır, filtre gerçekten ayırt eder |
-| 200+ saat | 90K+ | Ölçek davranışının ilk gerçek sinyali |
+| ~2 saat | ~120 | Sadece mekanik doğrulama — her sorgu her şeyi bulur |
+| **20-50 saat** | **1.2K-3K** | **İyi denge** — HNSW anlam kazanır, filtre gerçekten ayırt eder |
+| 200+ saat | 12K+ | Ölçek davranışının ilk gerçek sinyali |
 
 ---
 

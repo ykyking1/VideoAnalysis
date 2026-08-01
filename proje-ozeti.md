@@ -40,7 +40,7 @@ video3 1:34:28 – 1:47:02
 Tetik: MinIO bucket notification → Kafka → Temporal workflow (checkpoint + heartbeat ile dayanıklı, çöken GPU işi kaldığı pencereden devam eder).
 
 1. **Model proxy üretimi** — ffmpeg + NVDEC, 240-360p HEVC. Önizleme için değil, model tüketimi (embedding/detektör/rerank) ve gelecekteki backfill'lerin ucuz decode'u için. Kalıcı tutulması opsiyonel (bkz. §4, JIT alternatifi).
-2. **Telemetri işleme** — pymavlink + polars ile `.tlog`/MAVLink log ayrıştırma. Video 8 sn pencere / 8 sn kaydırma ile bölünür (**chunking yöntemi: sabit-uzunluk, örtüşmesiz** — 2026-07-29'da %50 örtüşmeli 4sn kaydırmadan değiştirildi, gerekçe: gerçek envanterde (§8) vektör sayısını yarıya indirmek; bkz. §9 için iyileştirme önerisi). Her pencere için türetilmiş alanlar otomatik hesaplanır:
+2. **Telemetri işleme** — pymavlink + polars ile `.tlog`/MAVLink log ayrıştırma. Video 60 sn pencere / 60 sn kaydırma ile bölünür (**chunking yöntemi: sabit-uzunluk, örtüşmesiz** — 2026-07-29'da %50 örtüşmeli 4sn kaydırmadan değiştirildi, gerekçe: gerçek envanterde (§8) vektör sayısını yarıya indirmek; bkz. §9 için iyileştirme önerisi). Pencere boyutunun kendisi (8sn→60sn) **2026-08-01'de, SINIRLI kanıtla** değiştirildi: birleştirilmiş 21 SeaDroneSee klibinden oluşan tek bir 914.8sn'lik videoda N=10 sorguyla ölçüldü, Recall@10 %20→%70 ve MRR 0.083→0.408 — yön güçlü ama video yapay birleştirme ve kısa/ani olayların 60sn'de kaybolup kaybolmadığı hiç test edilmedi (bkz. docs/worklog_2026-08-01.md, §9'daki çok-ölçekli pencereleme fikri bu riski adresleyebilir ama uygulanmadı). Her pencere için türetilmiş alanlar otomatik hesaplanır:
    - `avg_speed_kmh`, `agl_m` (irtifa)
    - `sun_elevation` (astral/pysolar — "gece/günbatımı" kavramlarının deterministik karşılığı)
    - `over_sea` (Shapely + GeoPandas point-in-polygon, OSM kıyı poligonları)
@@ -100,8 +100,9 @@ Tetik: MinIO bucket notification → Kafka → Temporal workflow (checkpoint + h
 
 **Vektör sayısı güncellendi (2026-07-29):** ~270M rakamı eski (ve yanlış çıkan)
 300.000 saat varsayımına dayanıyordu. Teyit edilen envanter (~300.000 video ×
-3-5sa, bkz. §8) + güncel 8sn pencere/8sn kaydırma (örtüşmesiz, bkz. §9) ile
-vektör sayısı ≈ **405M-675M (orta: ~540M)** — aşağıdaki tablo hâlâ eski 270M
+3-5sa, bkz. §8) + güncel 60sn pencere/60sn kaydırma (örtüşmesiz, bkz. §9;
+8sn'den 60sn'ye 2026-08-01'de SINIRLI kanıtla değiştirildi, bkz. §3.1) ile
+vektör sayısı ≈ **54M-90M (orta: ~72M)** — aşağıdaki tablo hâlâ eski 270M
 tabanıyla, oranlar değişmez ama mutlak GB'lar ~2x ölçeklenmeli. Ayrıca tablo
 X-CLIP/512d varsayımıyla yazıldı; model seçimi hâlâ kesinleşmedi (§5) — bu
 oturumda lisans nedeniyle Qwen3-VL-Embedding-2B (2048d, MRL ile 64-2048d'ye
@@ -174,8 +175,8 @@ Aşağıdakiler varsayım değil, bu depoda yapılan ölçümlerdir (docs/worklo
 
 ## 9. Bilinen İyileştirme Fırsatları (henüz uygulanmadı, test edilmeli)
 
-- **Sahne-sınırına yaslanmış hibrit chunking**: mevcut sabit 8sn/8sn pencerelemeyi, zaten hesaplanan ffmpeg sahne değişim skoruna göre sınırları esnetip (tavan + snap-to-scene-boundary) iyileştirmek — düşük risk, düşük maliyet. Gerçek envanter ölçeğinde (§8: ~540M vektör, 8sn/8sn ile) bu artık sadece kalite değil, maliyet açısından da öncelikli olabilir. Saf shot-based chunking önerilmiyor (monoton İHA sahnelerinde — örn. 20 dk açık deniz — aşırı uzun tek segment riski var).
-- **Çok-ölçekli (hiyerarşik) pencereleme**: kısa/ani olaylar (8sn) ile uzun/sürekli aktiviteler (örn. 60sn "takip") için ayrı katmanlar — önce sorgu loglarında süre-uyumsuzluğu gerçekten sorun mu diye ölçülmeli.
+- **Sahne-sınırına yaslanmış hibrit chunking**: mevcut sabit 60sn/60sn pencerelemeyi, zaten hesaplanan ffmpeg sahne değişim skoruna göre sınırları esnetip (tavan + snap-to-scene-boundary) iyileştirmek — düşük risk, düşük maliyet. Gerçek envanter ölçeğinde (§8: ~72M vektör, 60sn/60sn ile) bu artık sadece kalite değil, maliyet açısından da öncelikli olabilir. Saf shot-based chunking önerilmiyor (monoton İHA sahnelerinde — örn. 20 dk açık deniz — aşırı uzun tek segment riski var).
+- **Çok-ölçekli (hiyerarşik) pencereleme — 2026-08-01'den beri ÖNCELİĞİ ARTTI**: kısa/ani olaylar için ince (8sn) ile uzun/sürekli aktiviteler için kaba (şu anki varsayılan, 60sn) katmanları birlikte tutmak. Taban pencere 8sn'den 60sn'ye çekildiğinden beri (SINIRLI kanıtla, bkz. §3.1) kısa/ani olayların artık HİÇ yakalanamama riski somutlaştı — bu artık "iyileştirme" değil, kapatılması gereken bir kör nokta olabilir. Önce sorgu loglarında süre-uyumsuzluğu gerçekten sorun mu diye ölçülmeli.
 - **Late chunking**: metin-RAG dünyasından (Jina AI) gelen, komşu pencere bağlamını koruma fikri — video tarafında tooling henüz olgun değil, izlenmeli ama kısa vadede aksiyon alınmamalı.
 
 ## 10. Teknoloji Yığını Özeti

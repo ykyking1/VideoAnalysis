@@ -2,14 +2,15 @@
 (proje-ozeti.md §3.2 madde 3).
 
 Sistemin çıktısı "hangi video" değil "hangi video + hangi zaman aralığı".
-Eşleşen 8sn'lik pencereler ardışıksa bunları tek bir aralık olarak sunmak
-gerekiyor - kullanıcıya 6 ayrı 8sn'lik satır değil, tek bir 48sn'lik aralık
-gösterilmeli.
+Eşleşen pencereler ardışıksa bunları tek bir aralık olarak sunmak gerekiyor -
+kullanıcıya 6 ayrı 60sn'lik satır değil, tek bir 360sn'lik aralık gösterilmeli.
 
 BOŞLUK TOLERANSI: Pencereler arasındaki boşluk INTERVAL_GAP_TOLERANCE_S'den
-küçükse birleştirilir. 8sn/8sn örtüşmesiz pencerelemede ardışık iki pencere
-arasındaki boşluk 0'dır; tolerans, aradaki bir pencerenin eşleşmemiş olduğu
-(ama olayın sürdüğü) durumları yakalar.
+küçükse birleştirilir. Örtüşmesiz pencerelemede ardışık iki pencere arasındaki
+boşluk 0'dır; tolerans, aradaki bir pencerenin eşleşmemiş olduğu (ama olayın
+sürdüğü) durumları yakalar. NOT: INTERVAL_GAP_TOLERANCE_S (varsayılan 10sn)
+WINDOW_S=8sn iken ayarlanmıştı - pencere 60sn'ye çıkınca bu payın hâlâ doğru
+oranda olup olmadığı ölçülmedi.
 """
 from dataclasses import dataclass
 

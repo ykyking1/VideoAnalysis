@@ -35,7 +35,7 @@ def scene_change_score(video_path: str, t_start: float, t_end: float,
                         max_samples: int = 16) -> float:
     """Pencere içindeki en büyük ardışık kare farkı.
 
-    max_samples ile sınırlı: 8sn'lik bir pencerede 30fps'te 240 kare var,
+    max_samples ile sınırlı: 60sn'lik bir pencerede 30fps'te 1800 kare var,
     hepsini okumak gereksiz - eşit aralıklı örneklem aynı sıralamayı veriyor."""
     cap = cv2.VideoCapture(video_path)
     fps = cap.get(cv2.CAP_PROP_FPS) or 25.0

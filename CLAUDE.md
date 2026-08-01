@@ -22,7 +22,7 @@ gecikme rakamları, doğruluk yüzdeleri, depolama tahminleri, model seçimi (§
 
 - **Ingest**: MinIO bucket notification → Kafka → Temporal workflow. 6 aktivite:
   proxy üretimi (ffmpeg+NVDEC/NVENC), telemetri parse (pymavlink+polars,
-  **8sn/8sn örtüşmesiz** pencere), klip embedding (Qwen3-VL-Embedding-2B),
+  **60sn/60sn örtüşmesiz** pencere), klip embedding (Qwen3-VL-Embedding-2B),
   YOLO26 görsel alanlar, Qwen2.5-VL seçici caption, Qdrant yazımı.
 - **Query**: vLLM + xgrammar ile yapısal filtre + semantik metne ayrıştırma →
   Qdrant'ta filtreli HNSW araması → **sonuç azsa kademeli filtre gevşetme** →
@@ -49,9 +49,19 @@ worklog'u oku:
   filtresi 21 sorgunun 17'sinde doğru cevabı yapısal olarak dışladı).
   Kayıp HNSW'nin yaklaşıklığından DEĞİL — filtreyi geçen adaylar arasında
   HNSW brute-force ile birebir aynı (0/10, 0/2, 0/21 sapma).
-- **8sn/8sn örtüşmesiz pencereleme.** %50 örtüşme gerçek envanterde ~1 milyar
-  vektör demekti; kaydırmayı pencereye eşitlemek bunu yarıya indiriyor.
-  Recall etkisi N=6'da test edildi, kötüleşme görülmedi — ama N=6 güvenilir değil.
+- **Örtüşmesiz pencereleme** (STRIDE_S=WINDOW_S). %50 örtüşme gerçek
+  envanterde ~1 milyar vektör demekti; kaydırmayı pencereye eşitlemek
+  bunu yarıya indiriyor. Recall etkisi N=6'da test edildi, kötüleşme
+  görülmedi — ama N=6 güvenilir değil.
+- **Pencere boyutu 8sn'den 60sn'ye çekildi (2026-08-01) — SINIRLI KANIT.**
+  Birleştirilmiş (21 SeaDroneSee klibi uç uca, 914.8sn) tek bir uzun
+  videoda N=10 sorguyla ölçüldü: Recall@10 %20→%70, MRR 0.083→0.408.
+  Yön güçlü ama: video yapay birleştirme (gerçek kesintisiz çekim değil),
+  kısa/ani olayların 60sn'de kaybolup kaybolmadığı HİÇ test edilmedi,
+  yapısal alanların (agl_m, avg_speed_kmh) bulanması test edilmedi.
+  §9'daki "çok-ölçekli (hiyerarşik) pencereleme" fikri (kısa olaylar için
+  8sn + uzun aktiviteler için 60sn, ayrı katmanlar) bu sorunu daha temiz
+  çözebilir ama henüz uygulanmadı. Detay: docs/worklog_2026-08-01.md.
 
 ## Model seçimi (§5) — HÂLÂ AÇIK
 

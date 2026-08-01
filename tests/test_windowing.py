@@ -1,4 +1,6 @@
 """Pencereleme ve Qdrant nokta kimliği testleri."""
+import math
+
 from common import config
 from common.qdrant_store import ClipPayload, point_id
 from ingest.activities.telemetry_processing import build_windows
@@ -14,11 +16,14 @@ def test_windows_cover_whole_video_without_gaps():
 
 
 def test_non_overlapping_stride_halves_window_count():
-    """8sn/8sn ile 8sn/4sn arasindaki maliyet farkinin kod tarafinda
-    gercekten oldugu dogrulaniyor (proje-ozeti.md §8 kapasite hesabi)."""
+    """Ortusmesiz pencerelemenin (STRIDE_S==WINDOW_S) pencere sayisini
+    duration/WINDOW_S formulune gore urettigi dogrulaniyor - degeri degil,
+    ORTUSMESIZ olma ozelligini test ediyor (proje-ozeti.md §8 kapasite
+    hesabi, WINDOW_S'in kendisi ayri bir olcumle secildi, bkz. common/config.py)."""
     assert config.STRIDE_S == config.WINDOW_S, "varsayilan ortusmesiz olmali"
-    windows = build_windows(80.0)
-    assert len(windows) == 10
+    duration = 80.0
+    windows = build_windows(duration)
+    assert len(windows) == math.ceil(duration / config.WINDOW_S)
 
 
 def test_last_window_is_truncated_not_padded():
