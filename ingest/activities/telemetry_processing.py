@@ -233,7 +233,7 @@ async def process_telemetry(video_id: str, proxy_path: str,
 
     windows = build_windows(duration)
     _log(f"{video_id}: {duration:.1f}s -> {len(windows)} pencere "
-         f"({WINDOW_S}sn/{STRIDE_S}sn)")
+         f"({config.WINDOW_S}sn/{config.STRIDE_S}sn)")
 
     if not telemetry_path:
         return windows
