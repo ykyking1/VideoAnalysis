@@ -21,6 +21,12 @@ anlatır: hazırlık (internet olan makinede) ve kurulum (hedef makinede).
 
 ## 1. Hazırlık (internet olan makinede)
 
+Bu makinede Docker'ın **kurulu VE çalışıyor** olması gerekir (`docker pull`/
+`docker save` ile imaj indirmek için) - bu, hedef (internetsiz) makineye
+`install_system_offline.sh` ile kurulacak Docker'dan tamamen ayrı bir şey.
+İnternetli makinede genelde zaten kuruludur; değilse önce onu (normal, online
+şekilde) kurup başlatın.
+
 ```bash
 git clone https://github.com/ykyking1/VideoAnalysis.git && cd VideoAnalysis
 ./scripts/prepare_offline_bundle.sh              # sadece ayristirma modeli

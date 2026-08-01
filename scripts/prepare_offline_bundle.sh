@@ -31,6 +31,7 @@ mkdir -p "$BUNDLE"/{system_packages,wheels,docker_images,models/embedding,models
 [ "$WITH_VLM" = 1 ] && mkdir -p "$BUNDLE/models/vl"
 
 command -v docker >/dev/null 2>&1 || die "docker gerekiyor (imajlari indirip kaydetmek icin)."
+docker info >/dev/null 2>&1 || die "docker kurulu ama dockerd calismiyor (bu makinede) - 'docker pull'/'docker save' icin daemon ayakta olmali. Once Docker'i baslatin (ör. 'sudo systemctl start docker')."
 command -v python3 >/dev/null 2>&1 || die "python3 gerekiyor (bu makinede - hedefte olmayabilir, asagida onun icin de paket indiriliyor)."
 
 # --- 0. Sistem paketleri (hedefte python3/git/ffmpeg hic olmayabilir) ------
