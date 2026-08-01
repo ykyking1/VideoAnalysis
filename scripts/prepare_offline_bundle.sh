@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # İNTERNET OLAN bir Linux makinede çalıştırılır - hedef (internetsiz) makineye
-# taşınacak her şeyi (Python paketleri, Docker imajları, model ağırlıkları)
-# tek bir klasöre indirir.
+# taşınacak her şeyi (sistem paketleri, Python paketleri, Docker imajları,
+# model ağırlıkları) tek bir klasöre indirir.
 #
 #     ./scripts/prepare_offline_bundle.sh [--with-vlm]
 #
 # --with-vlm: caption/rerank için Qwen2.5-VL-7B-Instruct-AWQ'yu da indirir
 #             (~6.5 GB ek, sadece caption/rerank kullanacaksanız gerekli).
 #
-# ÖNEMLİ: bu makine hedef makineyle AYNI mimaride olmalı (x86_64 Linux, aynı
-# Python sürümü) - pip wheel'leri platforma özgü. Farklıysa `pip download`
-# icin --platform/--python-version bayraklarini elle ekleyin.
+# KRİTİK ÖNKOŞUL: Bu makine hedef makineyle **AYNI Ubuntu sürümü** olmalı
+# (ör. ikisi de 24.04) - .deb paketleri sürüme özgüdür, uyumsuz sürümden
+# kurulum sessizce bozuk bir sisteme yol açabilir. Ayrıca aynı mimaride
+# olmalı (x86_64 Linux, aynı Python sürümü) - pip wheel'leri platforma özgü.
 #
 # Çıktı: ./offline_bundle/ (bunu USB/ağ ile hedef makineye taşıyın, sonra
-# orada: ./scripts/setup.sh --offline ./offline_bundle)
+# orada ÖNCE: ./scripts/install_system_offline.sh (Python henüz yoksa gerekli)
+# SONRA: ./scripts/setup.sh --offline ./offline_bundle)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,11 +27,35 @@ WITH_VLM=0
 [ "${1:-}" = "--with-vlm" ] && WITH_VLM=1
 
 BUNDLE="$(pwd)/offline_bundle"
-mkdir -p "$BUNDLE"/{wheels,docker_images,models/embedding,models/yolo,models/parse}
+mkdir -p "$BUNDLE"/{system_packages,wheels,docker_images,models/embedding,models/yolo,models/parse}
 [ "$WITH_VLM" = 1 ] && mkdir -p "$BUNDLE/models/vl"
 
 command -v docker >/dev/null 2>&1 || die "docker gerekiyor (imajlari indirip kaydetmek icin)."
-command -v python3 >/dev/null 2>&1 || die "python3 gerekiyor."
+command -v python3 >/dev/null 2>&1 || die "python3 gerekiyor (bu makinede - hedefte olmayabilir, asagida onun icin de paket indiriliyor)."
+
+# --- 0. Sistem paketleri (hedefte python3/git/ffmpeg hic olmayabilir) ------
+say "Sistem paketleri indiriliyor (.deb) -> $BUNDLE/system_packages"
+if command -v apt-get >/dev/null 2>&1; then
+    sudo apt-get update -qq
+    sudo apt-get install --download-only -y -o Dir::Cache::Archives="$BUNDLE/system_packages" \
+        python3 python3-venv python3-pip git ffmpeg 2>&1 | tail -5
+    echo "$(ls "$BUNDLE/system_packages"/*.deb 2>/dev/null | wc -l) .deb dosyasi indirildi"
+else
+    warn "apt-get yok - sistem paketleri atlandi. Hedefte python3/git/ffmpeg zaten kuruluysa sorun degil."
+fi
+
+say "Docker Engine statik ikilileri indiriliyor (apt/repo eslemesi gerektirmez) -> $BUNDLE/system_packages"
+DOCKER_TGZ="$BUNDLE/system_packages/docker-static.tgz"
+curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-27.5.1.tgz" -o "$DOCKER_TGZ" \
+    || warn "Docker statik ikilisi indirilemedi - hedefte Docker zaten kuruluysa sorun degil, degilse elle indirin: https://download.docker.com/linux/static/stable/x86_64/"
+
+# Statik tarball'da docker-compose (v2 plugin) YOK - ayri indirilmesi lazim,
+# yoksa "docker compose" komutu hedefte "unknown command" verir (bu proje
+# her yerde docker compose v2 kullaniyor, standalone docker-compose degil).
+say "docker compose (v2) eklentisi indiriliyor -> $BUNDLE/system_packages"
+COMPOSE_BIN="$BUNDLE/system_packages/docker-compose-plugin"
+curl -fsSL "https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64" -o "$COMPOSE_BIN" \
+    || warn "docker-compose eklentisi indirilemedi - hedefte zaten kuruluysa sorun degil, degilse elle indirin: https://github.com/docker/compose/releases"
 
 # --- 1. Python paketleri (wheel'ler) ----------------------------------------
 say "Python paketleri indiriliyor -> $BUNDLE/wheels"

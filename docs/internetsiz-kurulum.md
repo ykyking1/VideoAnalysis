@@ -11,13 +11,13 @@ anlatır: hazırlık (internet olan makinede) ve kurulum (hedef makinede).
   özgüdür. Farklıysa `pip download`'a `--platform`/`--python-version`
   bayrakları eklemeniz gerekir (`scripts/prepare_offline_bundle.sh`'i elle
   düzenleyin).
-- **Docker, ffmpeg, git, python3 kendisi bu belgenin kapsamı dışında.**
-  `scripts/setup.sh` bunları sudo ile kurmuyor (hiçbir zaman kurmadı, online
-  modda da). İnternetsiz bir makinede bunları ayrıca (ör. `apt-offline` ile
-  hazırlanmış bir yerel apt deposu, ya da üretici tarafından sağlanan bir
-  kurulum imajı) sağlamanız gerekir - bu, işletim sistemi seviyesinde bir
-  konu, proje kodunun çözebileceği bir şey değil.
-- NVIDIA sürücüsü de aynı şekilde önceden kurulu olmalı.
+- **python3/git/ffmpeg/Docker hedefte hiç kurulu olmayabilir** - bu artık
+  `scripts/install_system_offline.sh` ile kapsam İÇİNE alındı (aşağıya
+  bakın). Yine de bu, `apt-get install --download-only` ile indirilen
+  `.deb` dosyalarına dayanıyor - hazırlık ve hedef makine **aynı Ubuntu
+  sürümünde** olmalı, yoksa paket kurulumu sessizce bozulabilir (bkz. altta).
+- NVIDIA sürücüsü bu kapsamın dışında, önceden kurulu olmalı (sürücü, GPU
+  modeline özgü ve genelde işletim sistemi imajıyla birlikte gelir).
 
 ## 1. Hazırlık (internet olan makinede)
 
@@ -31,6 +31,7 @@ Bu, `./offline_bundle/` klasörüne şunları indirir:
 
 | Klasör | İçerik | Yaklaşık boyut |
 |---|---|---|
+| `system_packages/` | python3/python3-venv/python3-pip/git/ffmpeg (.deb) + Docker Engine statik ikilileri + docker-compose (v2) eklentisi | ~230-430 MB |
 | `wheels/` | Tüm Python paketleri (requirements.txt + requirements-serving.txt) | ~3-5 GB |
 | `docker_images/` | MinIO, Qdrant, Postgres, Kafka, Temporal, Temporal UI, vLLM imajları (`docker save`) | ~8-10 GB |
 | `models/embedding/` | Qwen3-VL-Embedding-2B | ~4 GB |
@@ -48,7 +49,27 @@ git clone https://github.com/ykyking1/VideoAnalysis.git && cd VideoAnalysis
 # git clone da internet ister - repo'yu da USB ile (ör. `git bundle` veya
 # dosya kopyası olarak) taşımanız gerekebilir, hedefte gerçekten hiç
 # internet yoksa.
+```
 
+### 2a. Sistem paketleri (python3/git/ffmpeg/Docker hiç yoksa)
+
+`scripts/setup.sh` Python'a ihtiyaç duyduğu için, hedefte Python bile yoksa
+önce **saf bash** olan `install_system_offline.sh` çalıştırılmalı:
+
+```bash
+sudo ./scripts/install_system_offline.sh /yol/offline_bundle
+```
+
+Bu, `system_packages/*.deb` dosyalarını kurar (python3, git, ffmpeg) ve
+Docker kurulu değilse statik ikililerinden kurup bir systemd servisi
+oluşturur. python3/git/ffmpeg/Docker'ın bir kısmı ya da tamamı zaten
+kuruluysa bu adım idempotent'tir - sadece eksik olanı kurar, geri kalanı
+atlar. Docker grubuna eklenen kullanıcının etkin olması için oturumu
+kapatıp açmanız gerekebilir.
+
+### 2b. Proje kurulumu
+
+```bash
 ./scripts/setup.sh --offline /yol/offline_bundle
 ```
 
@@ -109,3 +130,11 @@ bulunmadığını ve internete hiç çıkılmadığını kontrol eder.
 - ffmpeg'in NVENC/NVDEC desteğiyle geldiğinden emin olun (bazı Ubuntu
   paketleri donanım kodlayıcıyı içermeyen "minimal" derlemeler olabilir) -
   bu proje kodu bunu kontrol etmiyor, sadece yazılım koduna geri çekiliyor.
+- `install_system_offline.sh`'in Docker statik-ikili + elle yazılmış systemd
+  birimi yolu gerçek bir makinede hiç denenmedi - resmi `docker-ce` apt
+  paketinin kurduğu birimin sadeleştirilmiş bir taklidi. `docker compose`
+  eklentisi statik `dockerd` tarball'ında YOK, bu yüzden ayrıca indirilip
+  (`prepare_offline_bundle.sh`) `/usr/local/lib/docker/cli-plugins/` altına
+  kopyalanıyor (`install_system_offline.sh`) - ama `buildx` gibi başka
+  docker-ce eklentileri hâlâ eksik kalabilir (bu proje `docker compose`
+  dışında bir eklenti kullanmıyor, o yüzden şimdilik önemli değil).
