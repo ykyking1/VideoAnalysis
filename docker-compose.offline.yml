@@ -22,3 +22,24 @@ services:
     pull_policy: never
   vllm:
     pull_policy: never
+    # Online modda vllm HF Hub'dan (ya da adi HF-ID olan PARSE_MODEL'den)
+    # ceker. Offline'da yerelde indirilmis agirliklari (prepare_offline_bundle*
+    # ile) bind-mount ediyoruz ve --served-model-name ile MUSTERI TARAFININ
+    # gordugu model adini (config.PARSE_MODEL, common/llm.py'nin istek govdesine
+    # koydugu "model" alani) HF-ID olarak SABIT tutuyoruz - aksi halde .env'deki
+    # PARSE_MODEL yerel bir yol olursa, vllm o yolu served-model-name sanir ama
+    # Python istemcisi de ayni yolu "model" olarak gonderdigi icin GENELDE calisir
+    # GIBI gorunur; asil sorun PARSE_MODEL container icinde GORULEMEYEN bir HOST
+    # yolu oldugunda (`--model <host-yolu>`) vllm modeli hic bulamaz. Bu yuzden
+    # .env'de PARSE_MODEL'i HF-ID olarak BIRAKIN (degistirmeyin), gercek agirlik
+    # yolunu OFFLINE_BUNDLE_DIR ile verin.
+    environment:
+      HF_HUB_OFFLINE: "1"
+    volumes:
+      - ${OFFLINE_BUNDLE_DIR:-.}/models/parse:/models/parse:ro
+    command: >
+      --model /models/parse
+      --served-model-name ${PARSE_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
+      --structured-outputs-config.backend xgrammar
+      --gpu-memory-utilization 0.85
+      --max-model-len 8192

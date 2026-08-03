@@ -1,8 +1,13 @@
-# İnternetsiz (air-gapped) kurulum
+# İnternetsiz (air-gapped) kurulum — Linux hedef
 
 Hedef makinenin internet erişimi yoksa, gereken her şeyi **başka, internet olan
 bir makinede** önceden hazırlayıp taşımanız gerekir. Bu belge iki aşamayı
 anlatır: hazırlık (internet olan makinede) ve kurulum (hedef makinede).
+
+**Hedef makine Windows ise** bu belge değil,
+[docs/internetsiz-kurulum-windows.md](internetsiz-kurulum-windows.md)
+kullanılmalı - script'ler (bash/apt/systemd) ve vLLM'in Windows desteği
+farklı, ayrı bir yol gerekiyor.
 
 ## Kapsam ve varsayımlar
 
