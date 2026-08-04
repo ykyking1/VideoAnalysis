@@ -40,6 +40,6 @@ services:
     command: >
       --model /models/parse
       --served-model-name ${PARSE_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
-      --structured-outputs-config.backend xgrammar
+      --guided-decoding-backend xgrammar
       --gpu-memory-utilization 0.85
       --max-model-len 8192

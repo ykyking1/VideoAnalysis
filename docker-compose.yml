@@ -115,13 +115,20 @@ services:
   # 4060 sinifi tek kartta once ingest'i bitirip sonra sorgu tarafini
   # ayaga kaldirmak daha pratik.
   vllm:
-    image: vllm/vllm-openai:latest
+    # v0.8.3'e SABITLENDI (latest DEGIL): latest artik CUDA 12.9/13.0 ile
+    # derleniyor (Docker Hub'da kontrol edildi - tum guncel etiketler
+    # cu129/cu130), 12.8 surucuyle "CUDA version must be greater than 13"
+    # hatasi veriyor (gercek kullanicida bulundu). v0.8.3, vLLM'in kendi
+    # Dockerfile'inda CUDA_VERSION=12.4.1 ile derleniyor - 12.8 surucuyle
+    # calisir (surucu geriye donuk uyumlu). Bedeli: --structured-outputs-config
+    # bu surumde yok, eski --guided-decoding-backend adi kullaniliyor.
+    image: vllm/vllm-openai:v0.8.3
     profiles: ["gpu"]
     ports:
       - "8000:8000"
     command: >
       --model ${PARSE_MODEL:-Qwen/Qwen2.5-7B-Instruct-AWQ}
-      --structured-outputs-config.backend xgrammar
+      --guided-decoding-backend xgrammar
       --gpu-memory-utilization 0.85
       --max-model-len 8192
     environment:

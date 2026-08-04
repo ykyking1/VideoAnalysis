@@ -74,7 +74,10 @@ IMAGES=(
     apache/kafka:latest
     temporalio/auto-setup:latest
     temporalio/ui:latest
-    vllm/vllm-openai:latest
+    # v0.8.3'e SABIT (latest DEGIL) - bkz. docker-compose.yml'deki vllm
+    # servisinin yorumu: latest artik CUDA 12.9/13.0 ile derleniyor, 12.8
+    # surucude "CUDA version must be greater than 13" hatasi veriyor.
+    vllm/vllm-openai:v0.8.3
 )
 for img in "${IMAGES[@]}"; do
     echo "  cekiliyor: $img"
