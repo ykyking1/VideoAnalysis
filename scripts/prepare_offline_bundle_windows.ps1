@@ -35,6 +35,19 @@ $ErrorActionPreference = "Stop"
 function Say($msg) { Write-Host ""; Write-Host "==> $msg" -ForegroundColor Cyan }
 function Warn($msg) { Write-Host "[!] $msg" -ForegroundColor Yellow }
 
+# PowerShell 5.1'de $ErrorActionPreference="Stop" acikken native bir komutun
+# stderr'ini (2>/*>) yonlendirmek her satiri "terminating exception"a
+# ceviriyor - ör. "py -3.11" kurulu degilse py.exe'nin kendi "No suitable
+# Python runtime found" mesaji script'i COKERTIYORDU (setup_windows.ps1'de
+# gercek kullanicida bulundu, ayni desen burada da vardi). Bu yardimci,
+# stderr'i sadece $ErrorActionPreference geçici gevsetilmisken yutuyor.
+function Invoke-Quiet {
+    param([Parameter(Mandatory=$true)][scriptblock]$Command)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Command 2>$null 1>$null } finally { $ErrorActionPreference = $prev }
+}
+
 New-Item -ItemType Directory -Force -Path "$OutDir\wheels_windows" | Out-Null
 New-Item -ItemType Directory -Force -Path "$OutDir\installers" | Out-Null
 
@@ -44,7 +57,7 @@ New-Item -ItemType Directory -Force -Path "$OutDir\installers" | Out-Null
 # Python 3.11 ile indirmek gerekir - farkli surumle inen wheel hedefte
 # kurulamayabilir (ABI uyusmazligi).
 $pyShortVer = ($PythonVersion -split '\.')[0..1] -join '.'
-& py "-$pyShortVer" --version 2>$null
+Invoke-Quiet { & py "-$pyShortVer" --version }
 if ($LASTEXITCODE -ne 0) {
     throw "Bu makinede 'py -$pyShortVer' bulunamadi. Python $pyShortVer'i (ya da hedefte kullanacaginiz surumu) once bu makineye kurun - wheel'ler onun ABI'siyle inmeli."
 }

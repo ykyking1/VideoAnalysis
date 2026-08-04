@@ -29,6 +29,20 @@ function Say($msg) { Write-Host ""; Write-Host "==> $msg" -ForegroundColor Cyan 
 function Warn($msg) { Write-Host "[!] $msg" -ForegroundColor Yellow }
 function Die($msg) { Write-Host "[HATA] $msg" -ForegroundColor Red; exit 1 }
 
+# PowerShell 5.1'de $ErrorActionPreference="Stop" acikken native bir komutun
+# stderr'ini (2>/*>) yonlendirmek her satiri "terminating exception"a
+# ceviriyor - ör. "py -3.11" kurulu degilse py.exe'nin kendi "No suitable
+# Python runtime found" mesaji script'i COKERTIYORDU (gercek kullanicida
+# bulundu). Bu yardimci, stderr'i sadece $ErrorActionPreference geçici
+# olarak gevsetilmisken yutuyor, boylece $LASTEXITCODE kontrolu guvenle
+# calisiyor.
+function Invoke-Quiet {
+    param([Parameter(Mandatory=$true)][scriptblock]$Command)
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try { & $Command 2>$null 1>$null } finally { $ErrorActionPreference = $prev }
+}
+
 if (-not (Test-Path $Bundle)) { Die "$Bundle bulunamadi." }
 $Bundle = (Resolve-Path $Bundle).Path
 Say "INTERNETSIZ KURULUM (Windows): $Bundle"
@@ -48,7 +62,7 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { $missing += "ffmp
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { $missing += "docker" }
 $pyOk = $false
 if (Get-Command py -ErrorAction SilentlyContinue) {
-    & py "-$PythonVersion" --version 2>$null
+    Invoke-Quiet { & py "-$PythonVersion" --version }
     if ($LASTEXITCODE -eq 0) { $pyOk = $true }
 }
 if (-not $pyOk) { $missing += "python$PythonVersion" }
@@ -106,7 +120,7 @@ if ($missing.Count -gt 0) {
 }
 Write-Host "python, git, ffmpeg, docker: tamam"
 
-docker info *>$null
+Invoke-Quiet { docker info }
 if ($LASTEXITCODE -ne 0) {
     Die "Docker Desktop kurulu ama calismiyor - once Docker Desktop'i acip 'Engine running' durumunu bekleyin."
 }
@@ -180,7 +194,7 @@ if ($LASTEXITCODE -ne 0) { Die "docker compose up basarisiz oldu (yukaridaki cik
 Write-Host "Servislerin hazir olmasi bekleniyor..."
 $ready = $false
 for ($i = 0; $i -lt 60; $i++) {
-    & $venvPy -c "from common.qdrant_store import get_client; get_client().get_collections()" 2>$null
+    Invoke-Quiet { & $venvPy -c "from common.qdrant_store import get_client; get_client().get_collections()" }
     if ($LASTEXITCODE -eq 0) { $ready = $true; break }
     Start-Sleep -Seconds 2
 }
