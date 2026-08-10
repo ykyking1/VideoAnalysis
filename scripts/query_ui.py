@@ -2,11 +2,9 @@
 tarayıcıda (proje-ozeti.md §1, §3.2 - `scripts/query_cli.py`'nin aynı
 `query/pipeline.py` hattını kullanan web arayüzü hali).
 
-KAPSAM (ilk sürüm, bilinçli olarak dar tutuldu): sadece arama + sonuç
-metadata'sı. Video önizleme/oynatma YOK - sonuç kartında video_id, zaman
-aralığı, skor, pencere sayısı, caption (varsa) gösteriliyor, video dosyasının
-kendisi sunulmuyor. Ingest/pipeline durumu izleme de bu sürümde yok, ayrı bir
-ihtiyaç olarak kaldı.
+KAPSAM: arama + manuel filtre alanları + sonuç önizleme (kısa, yeniden
+kodlanmış klip - ham/proxy video dosyasının kendisi DEĞİL). Ingest/pipeline
+durumu izleme bu sürümde yok, ayrı bir ihtiyaç olarak kaldı.
 
 Kullanım:
     python -m scripts.query_ui
@@ -14,14 +12,23 @@ Kullanım:
 
 vLLM erişilemezse (yapısal ayrıştırma kapalıysa) sorgu otomatik olarak
 tamamen semantik aramaya düşer - bu, `query/llm_parser.py`'nin kendi geri
-çekilme davranışı, bu dosya ayrıca bir şey yapmıyor.
+çekilme davranışı. MANUEL FİLTRELER tam bunun için var: vLLM kapalıyken de
+(ya da vLLM'in bulduğu tek bir alanı düzeltmek için) filtreli arama
+yapılabilsin diye - bkz. query/pipeline.py::apply_filter_overrides().
 """
 import argparse
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 import gradio as gr
 
 from common import config
 from common.console import use_utf8_stdout
+from common.minio_client import get_client
+from query.interval_merge import Interval
+from query.llm_parser import StructuredFilters
 from query.pipeline import QueryResponse, run_query
 
 use_utf8_stdout()
@@ -31,6 +38,9 @@ EXAMPLE_QUERIES = [
     "en az 3 aracın göründüğü, alçak irtifada uçuşlar",
     "gece deniz üzerinde hareket eden tekne",
 ]
+
+_TRISTATE = ["Farketmez", "Evet", "Hayır"]
+_TRISTATE_MAP = {"Farketmez": None, "Evet": True, "Hayır": False}
 
 
 def format_timestamp(seconds: float) -> str:
@@ -68,8 +78,9 @@ def render_filter_info(response: QueryResponse) -> str:
 
 
 def render_results(response: QueryResponse) -> str:
-    """Aralıkları kart-benzeri Markdown listesi olarak render eder.
-    Video ÖNİZLEMESİ/OYNATMA yok (bkz. modül docstring'i) - sadece metadata."""
+    """Aralıkları kart-benzeri Markdown listesi olarak render eder. Aşağıdaki
+    "sonuç #" alanına bu listedeki numarayı (1'den başlar) yazıp Önizle'ye
+    basarak kısa bir klip görülebilir - bkz. do_preview()."""
     if not response.intervals:
         return "_Sonuç bulunamadı._"
 
@@ -87,12 +98,36 @@ def render_results(response: QueryResponse) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
-def do_search(query: str, top_k: int, rerank: bool):
+def build_manual_filters(sensor_type, min_speed, max_speed, min_agl, max_agl,
+                          over_sea, is_sunset, is_night, min_vehicles) -> StructuredFilters:
+    """UI widget değerlerinden StructuredFilters kurar - boş/"Farketmez"
+    bırakılan alanlar None kalır (dokunulmamış sayılır, bkz.
+    query/pipeline.py::apply_filter_overrides)."""
+    return StructuredFilters(
+        sensor_type=(sensor_type or "").strip() or None,
+        min_speed_kmh=min_speed,
+        max_speed_kmh=max_speed,
+        min_agl_m=min_agl,
+        max_agl_m=max_agl,
+        over_sea=_TRISTATE_MAP.get(over_sea),
+        is_sunset=_TRISTATE_MAP.get(is_sunset),
+        is_night=_TRISTATE_MAP.get(is_night),
+        min_vehicle_count=int(min_vehicles) if min_vehicles is not None else None,
+    )
+
+
+def do_search(query: str, top_k: int, rerank: bool,
+              sensor_type, min_speed, max_speed, min_agl, max_agl,
+              over_sea, is_sunset, is_night, min_vehicles):
     query = (query or "").strip()
     if not query:
-        return "_Bir sorgu girin._", ""
+        return "_Bir sorgu girin._", "", []
+    overrides = build_manual_filters(
+        sensor_type, min_speed, max_speed, min_agl, max_agl,
+        over_sea, is_sunset, is_night, min_vehicles,
+    )
     try:
-        response = run_query(query, top_k=top_k, enable_rerank=rerank)
+        response = run_query(query, top_k=top_k, enable_rerank=rerank, filter_overrides=overrides)
     except Exception as exc:  # noqa: BLE001 - kullaniciya arayuzde goster, coksun istemiyoruz
         err = (
             f"**Hata:** {exc}\n\n"
@@ -100,8 +135,56 @@ def do_search(query: str, top_k: int, rerank: bool):
             f"({config.VLLM_BASE_URL}) erişilebilir mi kontrol edin - "
             "`python -m scripts.check_env`."
         )
-        return err, ""
-    return render_filter_info(response), render_results(response)
+        return err, "", []
+    return render_filter_info(response), render_results(response), response.intervals
+
+
+def fetch_preview_clip(interval: Interval) -> str:
+    """Proxy videodan [t_start, t_end] aralığını kırpıp tarayıcı-uyumlu
+    (H.264, sesiz - proxy'nin kendisi de sessiz, bkz.
+    ingest/activities/proxy_generation.py) kısa bir MP4'e dönüştürür.
+
+    NEDEN YENIDEN KODLAMA: proxy'ler HEVC (240-360p, model kalitesi) -
+    tarayıcılarda HEVC desteği tutarsız (ör. Firefox'ta yok). Kırpılan klip
+    zaten kısa (birkaç dakika en fazla) oldugu icin yeniden kodlama hizli."""
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError("ffmpeg PATH'te bulunamadı - önizleme için gerekli.")
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="query_ui_preview_"))
+    proxy_path = tmp_dir / "proxy.mp4"
+    clip_path = tmp_dir / "clip.mp4"
+
+    client = get_client()
+    client.fget_object(config.MINIO_BUCKET_PROXY, f"{interval.video_id}/proxy.mp4", str(proxy_path))
+
+    duration = max(interval.duration_s, 0.5)
+    cmd = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-ss", str(interval.t_start), "-i", str(proxy_path), "-t", str(duration),
+        "-c:v", "libx264", "-preset", "fast", "-crf", "23", "-an",
+        "-movflags", "+faststart", str(clip_path),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg klip kesme başarısız: {result.stderr[-500:]}")
+    return str(clip_path)
+
+
+def do_preview(intervals: list, idx: int):
+    if not intervals:
+        return None, "_Önce bir arama yapın._"
+    if idx is None or not (1 <= int(idx) <= len(intervals)):
+        return None, f"_Sonuç # 1 ile {len(intervals)} arasında olmalı._"
+    interval = intervals[int(idx) - 1]
+    try:
+        clip_path = fetch_preview_clip(interval)
+    except Exception as exc:  # noqa: BLE001 - kullaniciya arayuzde goster
+        return None, (
+            f"**Önizleme alınamadı:** {exc}\n\n"
+            f"Video: `{interval.video_id}`, proxy bucket'ında "
+            f"({config.MINIO_BUCKET_PROXY}) bulunuyor mu kontrol edin."
+        )
+    return clip_path, f"**{interval.video_id}**  {format_timestamp(interval.t_start)} – {format_timestamp(interval.t_end)}"
 
 
 def build_app() -> gr.Blocks:
@@ -110,7 +193,8 @@ def build_app() -> gr.Blocks:
             "# İHA Video Arşivinde Semantik Arama\n"
             "Doğal dil sorgusu → video kimliği + zaman aralığı. "
             "Yapısal kısıtlar (irtifa, hız, araç sayısı, gece/gündüz, deniz üstü) "
-            "sorgu metninden otomatik çıkarılır."
+            "sorgu metninden otomatik çıkarılır - vLLM kapalıysa ya da onun "
+            "bulduğunu düzeltmek isterseniz aşağıdaki **Manuel filtreler**'i kullanın."
         )
         with gr.Row():
             query_box = gr.Textbox(
@@ -130,11 +214,43 @@ def build_app() -> gr.Blocks:
             )
         gr.Examples(examples=EXAMPLE_QUERIES, inputs=query_box)
 
+        with gr.Accordion("Manuel filtreler (opsiyonel - vLLM'in bulduğunu ezer)", open=False):
+            with gr.Row():
+                sensor_type_box = gr.Textbox(label="sensor_type", placeholder="ör. rgb, ir")
+                min_vehicles_box = gr.Number(label="min. araç sayısı", value=None, precision=0)
+            with gr.Row():
+                min_speed_box = gr.Number(label="min. hız (km/s)", value=None)
+                max_speed_box = gr.Number(label="maks. hız (km/s)", value=None)
+            with gr.Row():
+                min_agl_box = gr.Number(label="min. irtifa (m, AGL)", value=None)
+                max_agl_box = gr.Number(label="maks. irtifa (m, AGL)", value=None)
+            with gr.Row():
+                over_sea_radio = gr.Radio(_TRISTATE, value="Farketmez", label="deniz üstü")
+                is_sunset_radio = gr.Radio(_TRISTATE, value="Farketmez", label="gün batımı")
+                is_night_radio = gr.Radio(_TRISTATE, value="Farketmez", label="gece")
+
         filter_info = gr.Markdown()
         results = gr.Markdown()
+        intervals_state = gr.State([])
 
-        search_btn.click(do_search, [query_box, top_k_slider, rerank_checkbox], [filter_info, results])
-        query_box.submit(do_search, [query_box, top_k_slider, rerank_checkbox], [filter_info, results])
+        search_inputs = [
+            query_box, top_k_slider, rerank_checkbox,
+            sensor_type_box, min_speed_box, max_speed_box, min_agl_box, max_agl_box,
+            over_sea_radio, is_sunset_radio, is_night_radio, min_vehicles_box,
+        ]
+        search_outputs = [filter_info, results, intervals_state]
+        search_btn.click(do_search, search_inputs, search_outputs)
+        query_box.submit(do_search, search_inputs, search_outputs)
+
+        gr.Markdown("### Önizleme\nYukarıdaki listeden bir sonuç numarası girip kısa bir klip görün "
+                     "(ham video değil, model-kalite proxy'den kırpılmış).")
+        with gr.Row():
+            preview_idx = gr.Number(label="Sonuç #", value=1, precision=0, scale=1)
+            preview_btn = gr.Button("Önizle", scale=1)
+        preview_status = gr.Markdown()
+        preview_video = gr.Video(label="Önizleme", autoplay=True)
+
+        preview_btn.click(do_preview, [intervals_state, preview_idx], [preview_video, preview_status])
 
     return app
 

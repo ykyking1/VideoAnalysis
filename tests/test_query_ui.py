@@ -4,7 +4,12 @@ eder (proje-ozeti.md §3.2)."""
 from query.interval_merge import Interval
 from query.llm_parser import ParsedQuery, StructuredFilters
 from query.pipeline import QueryResponse
-from scripts.query_ui import format_timestamp, render_filter_info, render_results
+from scripts.query_ui import (
+    build_manual_filters,
+    format_timestamp,
+    render_filter_info,
+    render_results,
+)
 
 
 def test_format_timestamp_under_hour():
@@ -61,3 +66,29 @@ def test_render_filter_info_shows_relaxation_warning():
     out = render_filter_info(response)
     assert "gevşetildi" in out
     assert "min_agl_m" in out
+
+
+def test_build_manual_filters_all_untouched_is_empty():
+    """Butun widget'lar varsayilan/bos birakilirsa StructuredFilters()
+    ile ayni olmali - is_empty() True donmeli, boylece
+    run_query()'nin filter_overrides'i yok saymasi (query/pipeline.py)
+    dogru tetiklenir."""
+    filters = build_manual_filters(
+        "", None, None, None, None, "Farketmez", "Farketmez", "Farketmez", None,
+    )
+    assert filters.is_empty()
+
+
+def test_build_manual_filters_maps_tristate_and_numbers():
+    filters = build_manual_filters(
+        "rgb", 5.0, 40.0, 10.0, 100.0, "Evet", "Hayır", "Farketmez", 3,
+    )
+    assert filters.sensor_type == "rgb"
+    assert filters.min_speed_kmh == 5.0
+    assert filters.max_speed_kmh == 40.0
+    assert filters.min_agl_m == 10.0
+    assert filters.max_agl_m == 100.0
+    assert filters.over_sea is True
+    assert filters.is_sunset is False
+    assert filters.is_night is None
+    assert filters.min_vehicle_count == 3

@@ -77,7 +77,8 @@ olmadan doğrulanamaz.
 - `query/` — ayrıştırma, filtre kurma/gevşetme, hibrit arama, aralık
   birleştirme, rerank, uçtan uca pipeline
 - `scripts/` — init_storage, register_video, ingest_video, query_cli,
-  query_ui (Gradio - sadece arama/metadata, video önizleme yok, ilk sürüm),
+  query_ui (Gradio - arama + manuel filtre alanları + kırpılmış proxy
+  klip önizleme; ingest/pipeline izleme yok),
   eval_retrieval, setup_minio_notifications
 - `schema/` — PostgreSQL durum takibi DDL (Qdrant şeması koddan kuruluyor)
 - `poc/` — Adım 0 doğrulama: envanter taraması, golden set rehberi

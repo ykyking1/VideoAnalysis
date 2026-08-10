@@ -19,13 +19,23 @@ Aşamaların doğası:
                 baskın maliyet olması beklenir
 """
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 
 from common import config
 from query.hybrid_search import search
 from query.interval_merge import Interval, merge_matches
-from query.llm_parser import ParsedQuery, parse_query
+from query.llm_parser import ParsedQuery, StructuredFilters, parse_query
 from query.rerank import rerank
+
+
+def apply_filter_overrides(filters: StructuredFilters, overrides: StructuredFilters) -> StructuredFilters:
+    """`overrides`'ta DOLU (None olmayan) alanlar `filters`'ı ezer, boş
+    (None) bırakılan alanlarda `filters`'ın (ör. vLLM'in bulduğu) değeri
+    korunur. UI'deki "manuel filtre" widget'ları için - vLLM kapalıyken de
+    filtreli arama yapılabilsin, vLLM açıkken de kullanıcı onun ayrıştırdığı
+    tek bir alanı elle düzeltebilsin diye kısmi (alan bazlı) uygulanıyor."""
+    updates = {k: v for k, v in asdict(overrides).items() if v is not None}
+    return replace(filters, **updates)
 
 
 @dataclass
@@ -50,14 +60,26 @@ class QueryResponse:
 
 
 def run_query(raw_query: str, top_k: int | None = None,
-               enable_rerank: bool | None = None) -> QueryResponse:
-    """Doğal dil sorgusunu çalıştırır ve birleştirilmiş zaman aralıklarını döner."""
+               enable_rerank: bool | None = None,
+               filter_overrides: StructuredFilters | None = None) -> QueryResponse:
+    """Doğal dil sorgusunu çalıştırır ve birleştirilmiş zaman aralıklarını döner.
+
+    `filter_overrides` verilirse (ör. UI'deki manuel filtre alanları),
+    vLLM'in ayrıştırdığı (ya da vLLM kapalıyken boş kalan) filtrelerin
+    üzerine DOLU alanlarla uygulanır - bkz. apply_filter_overrides()."""
     started = time.perf_counter()
     timings: dict[str, float] = {}
 
     t = time.perf_counter()
     parsed = parse_query(raw_query)
     timings["parse"] = (time.perf_counter() - t) * 1000
+
+    if filter_overrides is not None and not filter_overrides.is_empty():
+        parsed = ParsedQuery(
+            filters=apply_filter_overrides(parsed.filters, filter_overrides),
+            semantic_text=parsed.semantic_text,
+            raw_query=parsed.raw_query,
+        )
 
     result = search(parsed, top_k=top_k)
     timings["embed"] = result.embed_ms

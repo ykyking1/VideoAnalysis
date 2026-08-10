@@ -491,8 +491,9 @@ query/
   rerank.py          opsiyonel VLM dogrulama
 
 scripts/             init_storage, register_video, ingest_video,
-                     query_cli, query_ui (Gradio - sadece arama, video
-                     onizleme yok), eval_retrieval, setup_minio_notifications
+                     query_cli, query_ui (Gradio - arama + manuel filtreler
+                     + kirpilmis klip onizleme), eval_retrieval,
+                     setup_minio_notifications
 tests/               37 test (filtre gevsetme, aralik birlestirme,
                      pencereleme, ayristirici guvenlik agi)
 ```
