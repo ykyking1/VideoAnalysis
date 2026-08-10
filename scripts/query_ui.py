@@ -222,16 +222,20 @@ def do_search_text(query: str, top_k: int, rerank: bool,
 
     row_updates = []
     for i, interval in enumerate(shown, 1):
-        text = render_result_text(interval, i) + "\n\n_(önizleme hazırlanıyor…)_"
-        row_updates += [gr.update(visible=True), text]
+        row_updates += [gr.update(visible=True), render_result_text(interval, i)]
     row_updates += [gr.update(visible=False), ""] * (MAX_PREVIEW_ROWS - len(shown))
 
     return [render_filter_info(response), overflow, shown] + row_updates
 
 
 def do_generate_previews(shown: list, progress=gr.Progress()):
-    """AŞAMA 2 (yavaş, paralel): sadece video kutularını (ve metindeki
-    "hazırlanıyor" notunu gerçek sonuçla) doldurur - bkz. do_search_text().
+    """AŞAMA 2 (yavaş, paralel): sadece video kutularını doldurur - bkz.
+    do_search_text(). Metin kutuları (text_md) BİLEREK çıktı DEĞİL: önceki
+    sürümde onlar da çıktı olunca Gradio ilerleme çubuğunu HER metin
+    kutusunda da (video kutularıyla aynı, tekrar tekrar) gösteriyordu -
+    ekran görüntüsüyle bildirilen, gerçek kullanıcı şikayeti. Bir klibin
+    üretimi başarısız olursa video kutusu boş kalır, sebebi konsola
+    yazdırılır (UI'ye değil) - bkz. aşağıdaki print.
 
     Klipler PARALEL üretiliyor - ölçüldü: MinIO indirme hızlı (~200ms) ama
     ffmpeg kodlama CPU'ya bağlı ve klip başına saniyeler sürüyor, sırayla
@@ -242,11 +246,10 @@ def do_generate_previews(shown: list, progress=gr.Progress()):
     veriyor - Gradio'nun her kutuda tekrarlanan varsayılan göstergesi
     yerine."""
     if not shown:
-        return ["", None] * MAX_PREVIEW_ROWS
+        return [None] * MAX_PREVIEW_ROWS
 
     total = len(shown)
     clip_paths: list[str | None] = [None] * total
-    clip_errors: list[Exception | None] = [None] * total
     done = 0
     progress(0, desc=f"Önizlemeler hazırlanıyor (0/{total})")
     with ThreadPoolExecutor(max_workers=min(total, 6) or 1) as pool:
@@ -256,19 +259,12 @@ def do_generate_previews(shown: list, progress=gr.Progress()):
             idx = futures[future]
             try:
                 clip_paths[idx] = future.result()
-            except Exception as exc:  # noqa: BLE001 - bu satiri gostermeye devam et, sadece video eksik kalsin
-                clip_errors[idx] = exc
+            except Exception as exc:  # noqa: BLE001 - bu satiri gostermeye devam et, sadece bu video eksik kalsin
+                print(f"[query_ui] önizleme alınamadı ({shown[idx].video_id}): {exc}")
             done += 1
             progress(done / total, desc=f"Önizlemeler hazırlanıyor ({done}/{total})")
 
-    updates = []
-    for i, interval in enumerate(shown, 1):
-        text = render_result_text(interval, i)
-        if clip_errors[i - 1] is not None:
-            text += f"\n\n_(önizleme alınamadı: {clip_errors[i - 1]})_"
-        updates += [text, clip_paths[i - 1]]
-    updates += ["", None] * (MAX_PREVIEW_ROWS - total)
-    return updates
+    return clip_paths + [None] * (MAX_PREVIEW_ROWS - total)
 
 
 def build_app() -> gr.Blocks:
@@ -340,9 +336,11 @@ def build_app() -> gr.Blocks:
         stage1_outputs = [filter_info, overflow_note, shown_state]
         for row, text_md, _ in row_components:
             stage1_outputs += [row, text_md]
-        stage2_outputs = []
-        for _, text_md, preview_vid in row_components:
-            stage2_outputs += [text_md, preview_vid]
+        # Metin kutuları (text_md) Aşama 2'nin çıktısı DEĞİL - bkz.
+        # do_generate_previews() docstring'i: aksi halde Gradio ilerleme
+        # çubuğunu video kutularıyla birlikte metin kutularında da
+        # tekrarlıyordu.
+        stage2_outputs = [preview_vid for _, _, preview_vid in row_components]
 
         # .then() zinciri: Asama 1 biter bitmez (metin gorunur), Asama 2
         # (yavas, paralel onizleme uretimi) arkadan baslar - bkz.
