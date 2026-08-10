@@ -102,18 +102,40 @@ def build_manual_filters(sensor_type, min_speed, max_speed, min_agl, max_agl,
                           over_sea, is_sunset, is_night, min_vehicles) -> StructuredFilters:
     """UI widget değerlerinden StructuredFilters kurar - boş/"Farketmez"
     bırakılan alanlar None kalır (dokunulmamış sayılır, bkz.
-    query/pipeline.py::apply_filter_overrides)."""
+    query/pipeline.py::apply_filter_overrides).
+
+    NEDEN gr.Number DEĞİL METİN KUTUSU: JavaScript'te boş bir sayı girdisi
+    okunurken `Number("")` `0` döner (tarayıcı davranışı, Gradio'ya özgü
+    değil) - bu yüzden dokunulmamış bir gr.Number alanı Python tarafına
+    `None` değil sessizce `0` olarak geliyordu ve GERÇEK bir filtre gibi
+    uygulanıp (ör. "yüzen insan" sorgusunda min_speed_kmh=0 aktif filtre
+    oldu, gevşetme merdivenini gereksiz tetikledi) - gerçek kullanıcıda
+    bulundu. Metin kutusunda boş string `0`'a dönüşmüyor, ayırt edilebiliyor."""
     return StructuredFilters(
         sensor_type=(sensor_type or "").strip() or None,
-        min_speed_kmh=min_speed,
-        max_speed_kmh=max_speed,
-        min_agl_m=min_agl,
-        max_agl_m=max_agl,
+        min_speed_kmh=_parse_optional_float(min_speed),
+        max_speed_kmh=_parse_optional_float(max_speed),
+        min_agl_m=_parse_optional_float(min_agl),
+        max_agl_m=_parse_optional_float(max_agl),
         over_sea=_TRISTATE_MAP.get(over_sea),
         is_sunset=_TRISTATE_MAP.get(is_sunset),
         is_night=_TRISTATE_MAP.get(is_night),
-        min_vehicle_count=int(min_vehicles) if min_vehicles is not None else None,
+        min_vehicle_count=_parse_optional_int(min_vehicles),
     )
+
+
+def _parse_optional_float(text) -> float | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    return float(text.replace(",", "."))
+
+
+def _parse_optional_int(text) -> int | None:
+    text = (text or "").strip()
+    if not text:
+        return None
+    return int(float(text))
 
 
 def do_search(query: str, top_k: int, rerank: bool,
@@ -122,12 +144,14 @@ def do_search(query: str, top_k: int, rerank: bool,
     query = (query or "").strip()
     if not query:
         return "_Bir sorgu girin._", "", []
-    overrides = build_manual_filters(
-        sensor_type, min_speed, max_speed, min_agl, max_agl,
-        over_sea, is_sunset, is_night, min_vehicles,
-    )
     try:
+        overrides = build_manual_filters(
+            sensor_type, min_speed, max_speed, min_agl, max_agl,
+            over_sea, is_sunset, is_night, min_vehicles,
+        )
         response = run_query(query, top_k=top_k, enable_rerank=rerank, filter_overrides=overrides)
+    except ValueError as exc:
+        return f"**Hata:** manuel filtre alanlarından biri sayı olarak okunamadı ({exc}).", "", []
     except Exception as exc:  # noqa: BLE001 - kullaniciya arayuzde goster, coksun istemiyoruz
         err = (
             f"**Hata:** {exc}\n\n"
@@ -215,15 +239,21 @@ def build_app() -> gr.Blocks:
         gr.Examples(examples=EXAMPLE_QUERIES, inputs=query_box)
 
         with gr.Accordion("Manuel filtreler (opsiyonel - vLLM'in bulduğunu ezer)", open=False):
+            gr.Markdown(
+                "_Boş bırakılan alanlar dokunulmamış sayılır. Sayısal alanlar "
+                "metin kutusu - `gr.Number`'ın boş alanı sessizce 0'a çevirdiği "
+                "(tarayıcı davranışı) gerçek kullanıcıda bulundu, bu yüzden "
+                "metin kutusu kullanılıyor._"
+            )
             with gr.Row():
                 sensor_type_box = gr.Textbox(label="sensor_type", placeholder="ör. rgb, ir")
-                min_vehicles_box = gr.Number(label="min. araç sayısı", value=None, precision=0)
+                min_vehicles_box = gr.Textbox(label="min. araç sayısı", placeholder="ör. 2")
             with gr.Row():
-                min_speed_box = gr.Number(label="min. hız (km/s)", value=None)
-                max_speed_box = gr.Number(label="maks. hız (km/s)", value=None)
+                min_speed_box = gr.Textbox(label="min. hız (km/s)", placeholder="boş = farketmez")
+                max_speed_box = gr.Textbox(label="maks. hız (km/s)", placeholder="boş = farketmez")
             with gr.Row():
-                min_agl_box = gr.Number(label="min. irtifa (m, AGL)", value=None)
-                max_agl_box = gr.Number(label="maks. irtifa (m, AGL)", value=None)
+                min_agl_box = gr.Textbox(label="min. irtifa (m, AGL)", placeholder="boş = farketmez")
+                max_agl_box = gr.Textbox(label="maks. irtifa (m, AGL)", placeholder="boş = farketmez")
             with gr.Row():
                 over_sea_radio = gr.Radio(_TRISTATE, value="Farketmez", label="deniz üstü")
                 is_sunset_radio = gr.Radio(_TRISTATE, value="Farketmez", label="gün batımı")

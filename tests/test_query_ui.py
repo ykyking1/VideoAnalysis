@@ -72,16 +72,18 @@ def test_build_manual_filters_all_untouched_is_empty():
     """Butun widget'lar varsayilan/bos birakilirsa StructuredFilters()
     ile ayni olmali - is_empty() True donmeli, boylece
     run_query()'nin filter_overrides'i yok saymasi (query/pipeline.py)
-    dogru tetiklenir."""
+    dogru tetiklenir. Alanlar METIN KUTUSU (bkz. modul docstring'i -
+    gr.Number'in bos alani sessizce 0'a cevirdigi gercek kullanicida
+    bulundu), bos string test ediliyor - None DEGIL."""
     filters = build_manual_filters(
-        "", None, None, None, None, "Farketmez", "Farketmez", "Farketmez", None,
+        "", "", "", "", "", "Farketmez", "Farketmez", "Farketmez", "",
     )
     assert filters.is_empty()
 
 
 def test_build_manual_filters_maps_tristate_and_numbers():
     filters = build_manual_filters(
-        "rgb", 5.0, 40.0, 10.0, 100.0, "Evet", "Hayır", "Farketmez", 3,
+        "rgb", "5.0", "40.0", "10.0", "100.0", "Evet", "Hayır", "Farketmez", "3",
     )
     assert filters.sensor_type == "rgb"
     assert filters.min_speed_kmh == 5.0
@@ -92,3 +94,15 @@ def test_build_manual_filters_maps_tristate_and_numbers():
     assert filters.is_sunset is False
     assert filters.is_night is None
     assert filters.min_vehicle_count == 3
+
+
+def test_build_manual_filters_zero_is_a_real_value_not_empty():
+    """Kullanici gercekten '0' YAZARSA (bos birakmazsa) bu artik gecerli,
+    aktif bir filtre olmali - once yasanan bug (gr.Number bos alani 0
+    saniyordu) ile KARISTIRILMAMALI, bu farkli bir senaryo."""
+    filters = build_manual_filters(
+        "", "0", "", "", "", "Farketmez", "Farketmez", "Farketmez", "0",
+    )
+    assert filters.min_speed_kmh == 0.0
+    assert filters.min_vehicle_count == 0
+    assert not filters.is_empty()
