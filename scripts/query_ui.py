@@ -177,17 +177,23 @@ def fetch_preview_clip(interval: Interval) -> str:
     return str(clip_path)
 
 
-def do_search(query: str, top_k: int, rerank: bool,
-              sensor_type, min_speed, max_speed, min_agl, max_agl,
-              over_sea, is_sunset, is_night, min_vehicles):
-    """Döndürdüğü şey: filter_info, overflow_note, sonra MAX_PREVIEW_ROWS
-    kadar (satır_görünür, metin, video_yolu) üçlüsü - build_app()'teki sabit
-    satır bileşenleriyle 1-1 eşleşiyor (bkz. modül docstring'i - Gradio'da
-    sonuç sayısı kadar dinamik bileşen oluşturulamıyor)."""
-    empty_rows = [gr.update(visible=False), "", None] * MAX_PREVIEW_ROWS
+def do_search_text(query: str, top_k: int, rerank: bool,
+                    sensor_type, min_speed, max_speed, min_agl, max_agl,
+                    over_sea, is_sunset, is_night, min_vehicles):
+    """AŞAMA 1 (hızlı): arama sonuçlarını METİN olarak hemen doldurur, video
+    önizlemeleri "hazırlanıyor" notuyla bekletilir - gerçek klipler AŞAMA
+    2'de (do_generate_previews, .then() ile zincirlenir) gelir.
+
+    NEDEN İKİ AŞAMA: tek, uzun bir fonksiyonun TÜM çıktıları olunca Gradio
+    hepsinde (8 video kutusunun hepsinde birden) aynı "processing" ETA
+    göstergesini basıyordu - kalabalık/çirkin göründüğü gerçek kullanıcıda
+    bildirildi. Aramayı (saniyeler) önizlemeden (paralel olsa bile
+    saniyeler) ayırınca sonuç metni hemen okunabilir oluyor, "processing"
+    sadece hâlâ dolmamış video kutularında kalıyor."""
+    empty_rows = [gr.update(visible=False), ""] * MAX_PREVIEW_ROWS
     query = (query or "").strip()
     if not query:
-        return ["_Bir sorgu girin._", ""] + empty_rows
+        return ["_Bir sorgu girin._", "", []] + empty_rows
     try:
         overrides = build_manual_filters(
             sensor_type, min_speed, max_speed, min_agl, max_agl,
@@ -195,7 +201,7 @@ def do_search(query: str, top_k: int, rerank: bool,
         )
         response = run_query(query, top_k=top_k, enable_rerank=rerank, filter_overrides=overrides)
     except ValueError as exc:
-        return [f"**Hata:** manuel filtre alanlarından biri sayı olarak okunamadı ({exc}).", ""] + empty_rows
+        return [f"**Hata:** manuel filtre alanlarından biri sayı olarak okunamadı ({exc}).", "", []] + empty_rows
     except Exception as exc:  # noqa: BLE001 - kullaniciya arayuzde goster, coksun istemiyoruz
         err = (
             f"**Hata:** {exc}\n\n"
@@ -203,7 +209,7 @@ def do_search(query: str, top_k: int, rerank: bool,
             f"({config.VLLM_BASE_URL}) erişilebilir mi kontrol edin - "
             "`python -m scripts.check_env`."
         )
-        return [err, ""] + empty_rows
+        return [err, "", []] + empty_rows
 
     intervals = response.intervals
     shown = intervals[:MAX_PREVIEW_ROWS]
@@ -214,15 +220,36 @@ def do_search(query: str, top_k: int, rerank: bool,
             f"sınırlamak için ilk {MAX_PREVIEW_ROWS} otomatik önizlemeyle gösteriliyor._"
         )
 
-    # Klipler PARALEL uretiliyor - olculdu: MinIO indirme hizli (~200ms) ama
-    # ffmpeg kodlama CPU'ya bagli ve klip basina saniyeler suruyor, sirayla
-    # 8 klip toplamda ~13s'ye kadar cikiyordu (gercek olculdu). Her klip
-    # kendi subprocess'inde calistigi icin (GIL'i bloklamiyor) ThreadPoolExecutor
-    # ile gercek paralellik sagliyor - cok cekirdekli bir makinede toplam
-    # sure ~en yavas tek klibe yaklasir, toplamlarina degil.
-    clip_paths: list[str | None] = [None] * len(shown)
-    clip_errors: list[Exception | None] = [None] * len(shown)
-    with ThreadPoolExecutor(max_workers=min(len(shown), 6) or 1) as pool:
+    row_updates = []
+    for i, interval in enumerate(shown, 1):
+        text = render_result_text(interval, i) + "\n\n_(önizleme hazırlanıyor…)_"
+        row_updates += [gr.update(visible=True), text]
+    row_updates += [gr.update(visible=False), ""] * (MAX_PREVIEW_ROWS - len(shown))
+
+    return [render_filter_info(response), overflow, shown] + row_updates
+
+
+def do_generate_previews(shown: list, progress=gr.Progress()):
+    """AŞAMA 2 (yavaş, paralel): sadece video kutularını (ve metindeki
+    "hazırlanıyor" notunu gerçek sonuçla) doldurur - bkz. do_search_text().
+
+    Klipler PARALEL üretiliyor - ölçüldü: MinIO indirme hızlı (~200ms) ama
+    ffmpeg kodlama CPU'ya bağlı ve klip başına saniyeler sürüyor, sırayla
+    8 klip toplamda ~13s'ye kadar çıkıyordu (gerçek ölçüldü). Her klip kendi
+    subprocess'inde çalıştığı için (GIL'i bloklamıyor) ThreadPoolExecutor ile
+    gerçek paralellik sağlanıyor - toplam süre ~en yavaş tek klibe yaklaşır,
+    toplamlarına değil. `gr.Progress()` tek, temiz bir ilerleme çubuğu
+    veriyor - Gradio'nun her kutuda tekrarlanan varsayılan göstergesi
+    yerine."""
+    if not shown:
+        return ["", None] * MAX_PREVIEW_ROWS
+
+    total = len(shown)
+    clip_paths: list[str | None] = [None] * total
+    clip_errors: list[Exception | None] = [None] * total
+    done = 0
+    progress(0, desc=f"Önizlemeler hazırlanıyor (0/{total})")
+    with ThreadPoolExecutor(max_workers=min(total, 6) or 1) as pool:
         futures = {pool.submit(fetch_preview_clip, interval): idx
                    for idx, interval in enumerate(shown)}
         for future in as_completed(futures):
@@ -231,16 +258,17 @@ def do_search(query: str, top_k: int, rerank: bool,
                 clip_paths[idx] = future.result()
             except Exception as exc:  # noqa: BLE001 - bu satiri gostermeye devam et, sadece video eksik kalsin
                 clip_errors[idx] = exc
+            done += 1
+            progress(done / total, desc=f"Önizlemeler hazırlanıyor ({done}/{total})")
 
-    row_updates = []
+    updates = []
     for i, interval in enumerate(shown, 1):
         text = render_result_text(interval, i)
         if clip_errors[i - 1] is not None:
             text += f"\n\n_(önizleme alınamadı: {clip_errors[i - 1]})_"
-        row_updates += [gr.update(visible=True), text, clip_paths[i - 1]]
-    row_updates += [gr.update(visible=False), "", None] * (MAX_PREVIEW_ROWS - len(shown))
-
-    return [render_filter_info(response), overflow] + row_updates
+        updates += [text, clip_paths[i - 1]]
+    updates += ["", None] * (MAX_PREVIEW_ROWS - total)
+    return updates
 
 
 def build_app() -> gr.Blocks:
@@ -293,6 +321,7 @@ def build_app() -> gr.Blocks:
 
         filter_info = gr.Markdown()
         overflow_note = gr.Markdown()
+        shown_state = gr.State([])  # Aşama 1 -> Aşama 2'ye gösterilen aralıkları taşır
 
         # Sabit sayida "sonuc satiri" onceden tanimlaniyor, arama sonrasi
         # gerektigi kadari gorunur yapiliyor (bkz. modul docstring'i).
@@ -308,12 +337,20 @@ def build_app() -> gr.Blocks:
             sensor_type_box, min_speed_box, max_speed_box, min_agl_box, max_agl_box,
             over_sea_radio, is_sunset_radio, is_night_radio, min_vehicles_box,
         ]
-        search_outputs = [filter_info, overflow_note]
-        for row, text_md, preview_vid in row_components:
-            search_outputs += [row, text_md, preview_vid]
+        stage1_outputs = [filter_info, overflow_note, shown_state]
+        for row, text_md, _ in row_components:
+            stage1_outputs += [row, text_md]
+        stage2_outputs = []
+        for _, text_md, preview_vid in row_components:
+            stage2_outputs += [text_md, preview_vid]
 
-        search_btn.click(do_search, search_inputs, search_outputs)
-        query_box.submit(do_search, search_inputs, search_outputs)
+        # .then() zinciri: Asama 1 biter bitmez (metin gorunur), Asama 2
+        # (yavas, paralel onizleme uretimi) arkadan baslar - bkz.
+        # do_search_text()/do_generate_previews() docstring'leri.
+        search_btn.click(do_search_text, search_inputs, stage1_outputs) \
+            .then(do_generate_previews, shown_state, stage2_outputs)
+        query_box.submit(do_search_text, search_inputs, stage1_outputs) \
+            .then(do_generate_previews, shown_state, stage2_outputs)
 
     return app
 
