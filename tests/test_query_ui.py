@@ -8,7 +8,7 @@ from scripts.query_ui import (
     build_manual_filters,
     format_timestamp,
     render_filter_info,
-    render_results,
+    render_result_text,
 )
 
 
@@ -20,29 +20,21 @@ def test_format_timestamp_over_hour():
     assert format_timestamp(3725) == "1:02:05"
 
 
-def test_render_results_empty():
-    assert "Sonuç bulunamadı" in render_results(
-        QueryResponse(query="x", intervals=[])
-    )
-
-
-def test_render_results_lists_intervals_with_caption():
+def test_render_result_text_includes_metadata_and_caption():
     interval = Interval(
         video_id="sds_train_4", t_start=0, t_end=47, score=0.368,
         n_windows=5, exact_filter_match=True, captions=("tekne görünüyor",),
     )
-    out = render_results(QueryResponse(query="tekne", intervals=[interval]))
+    out = render_result_text(interval, 1)
     assert "sds_train_4" in out
     assert "0:00:00" in out and "0:00:47" in out
     assert "tekne görünüyor" in out
     assert "[yaklaşık]" not in out
 
 
-def test_render_results_marks_approximate_match():
-    interval = Interval(
-        video_id="v1", t_start=0, t_end=10, exact_filter_match=False,
-    )
-    out = render_results(QueryResponse(query="x", intervals=[interval]))
+def test_render_result_text_marks_approximate_match():
+    interval = Interval(video_id="v1", t_start=0, t_end=10, exact_filter_match=False)
+    out = render_result_text(interval, 1)
     assert "[yaklaşık]" in out
 
 

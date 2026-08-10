@@ -2,9 +2,10 @@
 tarayıcıda (proje-ozeti.md §1, §3.2 - `scripts/query_cli.py`'nin aynı
 `query/pipeline.py` hattını kullanan web arayüzü hali).
 
-KAPSAM: arama + manuel filtre alanları + sonuç önizleme (kısa, yeniden
-kodlanmış klip - ham/proxy video dosyasının kendisi DEĞİL). Ingest/pipeline
-durumu izleme bu sürümde yok, ayrı bir ihtiyaç olarak kaldı.
+KAPSAM: arama + manuel filtre alanları + OTOMATİK sonuç önizleme (her
+sonucun yanında kısa, yeniden kodlanmış klip - ham/proxy video dosyasının
+kendisi DEĞİL). Ingest/pipeline durumu izleme bu sürümde yok, ayrı bir
+ihtiyaç olarak kaldı.
 
 Kullanım:
     python -m scripts.query_ui
@@ -15,6 +16,12 @@ tamamen semantik aramaya düşer - bu, `query/llm_parser.py`'nin kendi geri
 çekilme davranışı. MANUEL FİLTRELER tam bunun için var: vLLM kapalıyken de
 (ya da vLLM'in bulduğu tek bir alanı düzeltmek için) filtreli arama
 yapılabilsin diye - bkz. query/pipeline.py::apply_filter_overrides().
+
+ÖNİZLEME NEDEN SINIRLI (MAX_PREVIEW_ROWS): her önizleme bir MinIO indirme +
+ffmpeg yeniden kodlama demek - TÜM sonuçlar için otomatik yapılırsa arama
+gecikmesi sonuç sayısıyla doğrusal büyür. Gradio'da bileşen sayısı sabit
+olmak zorunda (dinamik sayıda bileşen oluşturulamaz) - bu yüzden sabit
+sayıda "satır" önceden tanımlanıp gerektiği kadarı görünür yapılıyor.
 """
 import argparse
 import shutil
@@ -41,6 +48,8 @@ EXAMPLE_QUERIES = [
 
 _TRISTATE = ["Farketmez", "Evet", "Hayır"]
 _TRISTATE_MAP = {"Farketmez": None, "Evet": True, "Hayır": False}
+
+MAX_PREVIEW_ROWS = 8
 
 
 def format_timestamp(seconds: float) -> str:
@@ -77,25 +86,19 @@ def render_filter_info(response: QueryResponse) -> str:
     return "\n\n".join(lines)
 
 
-def render_results(response: QueryResponse) -> str:
-    """Aralıkları kart-benzeri Markdown listesi olarak render eder. Aşağıdaki
-    "sonuç #" alanına bu listedeki numarayı (1'den başlar) yazıp Önizle'ye
-    basarak kısa bir klip görülebilir - bkz. do_preview()."""
-    if not response.intervals:
-        return "_Sonuç bulunamadı._"
-
-    blocks = []
-    for i, interval in enumerate(response.intervals, 1):
-        badge = "" if interval.exact_filter_match else "  `[yaklaşık]`"
-        header = (
-            f"**{i}. {interval.video_id}**{badge}  \n"
-            f"{format_timestamp(interval.t_start)} – {format_timestamp(interval.t_end)}"
-            f"  ·  {interval.duration_s:.0f}sn  ·  {interval.n_windows} pencere"
-            f"  ·  skor={interval.score:.3f}"
-        )
-        captions = "\n".join(f"> \"{c}\"" for c in interval.captions[:2])
-        blocks.append(header + ("\n" + captions if captions else ""))
-    return "\n\n---\n\n".join(blocks)
+def render_result_text(interval: Interval, index: int) -> str:
+    """Tek bir aralığı Markdown olarak render eder (bir "satır"ın metin
+    yarısı - yanına gr.Video ile otomatik önizleme eşleniyor, bkz.
+    do_search())."""
+    badge = "" if interval.exact_filter_match else "  `[yaklaşık]`"
+    header = (
+        f"**{index}. {interval.video_id}**{badge}  \n"
+        f"{format_timestamp(interval.t_start)} – {format_timestamp(interval.t_end)}"
+        f"  ·  {interval.duration_s:.0f}sn  ·  {interval.n_windows} pencere"
+        f"  ·  skor={interval.score:.3f}"
+    )
+    captions = "\n".join(f"> \"{c}\"" for c in interval.captions[:2])
+    return header + ("\n" + captions if captions else "")
 
 
 def build_manual_filters(sensor_type, min_speed, max_speed, min_agl, max_agl,
@@ -138,31 +141,6 @@ def _parse_optional_int(text) -> int | None:
     return int(float(text))
 
 
-def do_search(query: str, top_k: int, rerank: bool,
-              sensor_type, min_speed, max_speed, min_agl, max_agl,
-              over_sea, is_sunset, is_night, min_vehicles):
-    query = (query or "").strip()
-    if not query:
-        return "_Bir sorgu girin._", "", []
-    try:
-        overrides = build_manual_filters(
-            sensor_type, min_speed, max_speed, min_agl, max_agl,
-            over_sea, is_sunset, is_night, min_vehicles,
-        )
-        response = run_query(query, top_k=top_k, enable_rerank=rerank, filter_overrides=overrides)
-    except ValueError as exc:
-        return f"**Hata:** manuel filtre alanlarından biri sayı olarak okunamadı ({exc}).", "", []
-    except Exception as exc:  # noqa: BLE001 - kullaniciya arayuzde goster, coksun istemiyoruz
-        err = (
-            f"**Hata:** {exc}\n\n"
-            f"Qdrant ({config.QDRANT_HOST}:{config.QDRANT_PORT}) ve gerekiyorsa vLLM "
-            f"({config.VLLM_BASE_URL}) erişilebilir mi kontrol edin - "
-            "`python -m scripts.check_env`."
-        )
-        return err, "", []
-    return render_filter_info(response), render_results(response), response.intervals
-
-
 def fetch_preview_clip(interval: Interval) -> str:
     """Proxy videodan [t_start, t_end] aralığını kırpıp tarayıcı-uyumlu
     (H.264, sesiz - proxy'nin kendisi de sessiz, bkz.
@@ -194,21 +172,55 @@ def fetch_preview_clip(interval: Interval) -> str:
     return str(clip_path)
 
 
-def do_preview(intervals: list, idx: int):
-    if not intervals:
-        return None, "_Önce bir arama yapın._"
-    if idx is None or not (1 <= int(idx) <= len(intervals)):
-        return None, f"_Sonuç # 1 ile {len(intervals)} arasında olmalı._"
-    interval = intervals[int(idx) - 1]
+def do_search(query: str, top_k: int, rerank: bool,
+              sensor_type, min_speed, max_speed, min_agl, max_agl,
+              over_sea, is_sunset, is_night, min_vehicles):
+    """Döndürdüğü şey: filter_info, overflow_note, sonra MAX_PREVIEW_ROWS
+    kadar (satır_görünür, metin, video_yolu) üçlüsü - build_app()'teki sabit
+    satır bileşenleriyle 1-1 eşleşiyor (bkz. modül docstring'i - Gradio'da
+    sonuç sayısı kadar dinamik bileşen oluşturulamıyor)."""
+    empty_rows = [gr.update(visible=False), "", None] * MAX_PREVIEW_ROWS
+    query = (query or "").strip()
+    if not query:
+        return ["_Bir sorgu girin._", ""] + empty_rows
     try:
-        clip_path = fetch_preview_clip(interval)
-    except Exception as exc:  # noqa: BLE001 - kullaniciya arayuzde goster
-        return None, (
-            f"**Önizleme alınamadı:** {exc}\n\n"
-            f"Video: `{interval.video_id}`, proxy bucket'ında "
-            f"({config.MINIO_BUCKET_PROXY}) bulunuyor mu kontrol edin."
+        overrides = build_manual_filters(
+            sensor_type, min_speed, max_speed, min_agl, max_agl,
+            over_sea, is_sunset, is_night, min_vehicles,
         )
-    return clip_path, f"**{interval.video_id}**  {format_timestamp(interval.t_start)} – {format_timestamp(interval.t_end)}"
+        response = run_query(query, top_k=top_k, enable_rerank=rerank, filter_overrides=overrides)
+    except ValueError as exc:
+        return [f"**Hata:** manuel filtre alanlarından biri sayı olarak okunamadı ({exc}).", ""] + empty_rows
+    except Exception as exc:  # noqa: BLE001 - kullaniciya arayuzde goster, coksun istemiyoruz
+        err = (
+            f"**Hata:** {exc}\n\n"
+            f"Qdrant ({config.QDRANT_HOST}:{config.QDRANT_PORT}) ve gerekiyorsa vLLM "
+            f"({config.VLLM_BASE_URL}) erişilebilir mi kontrol edin - "
+            "`python -m scripts.check_env`."
+        )
+        return [err, ""] + empty_rows
+
+    intervals = response.intervals
+    shown = intervals[:MAX_PREVIEW_ROWS]
+    overflow = ""
+    if len(intervals) > MAX_PREVIEW_ROWS:
+        overflow = (
+            f"_+{len(intervals) - MAX_PREVIEW_ROWS} sonuç daha var - önizleme yükünü "
+            f"sınırlamak için ilk {MAX_PREVIEW_ROWS} otomatik önizlemeyle gösteriliyor._"
+        )
+
+    row_updates = []
+    for i, interval in enumerate(shown, 1):
+        text = render_result_text(interval, i)
+        try:
+            clip_path = fetch_preview_clip(interval)
+        except Exception as exc:  # noqa: BLE001 - bu satiri gostermeye devam et, sadece video eksik kalsin
+            clip_path = None
+            text += f"\n\n_(önizleme alınamadı: {exc})_"
+        row_updates += [gr.update(visible=True), text, clip_path]
+    row_updates += [gr.update(visible=False), "", None] * (MAX_PREVIEW_ROWS - len(shown))
+
+    return [render_filter_info(response), overflow] + row_updates
 
 
 def build_app() -> gr.Blocks:
@@ -260,27 +272,28 @@ def build_app() -> gr.Blocks:
                 is_night_radio = gr.Radio(_TRISTATE, value="Farketmez", label="gece")
 
         filter_info = gr.Markdown()
-        results = gr.Markdown()
-        intervals_state = gr.State([])
+        overflow_note = gr.Markdown()
+
+        # Sabit sayida "sonuc satiri" onceden tanimlaniyor, arama sonrasi
+        # gerektigi kadari gorunur yapiliyor (bkz. modul docstring'i).
+        row_components: list[tuple[gr.Row, gr.Markdown, gr.Video]] = []
+        for _ in range(MAX_PREVIEW_ROWS):
+            with gr.Row(visible=False) as row:
+                text_md = gr.Markdown(scale=2)
+                preview_vid = gr.Video(scale=1, show_label=False, autoplay=False)
+            row_components.append((row, text_md, preview_vid))
 
         search_inputs = [
             query_box, top_k_slider, rerank_checkbox,
             sensor_type_box, min_speed_box, max_speed_box, min_agl_box, max_agl_box,
             over_sea_radio, is_sunset_radio, is_night_radio, min_vehicles_box,
         ]
-        search_outputs = [filter_info, results, intervals_state]
+        search_outputs = [filter_info, overflow_note]
+        for row, text_md, preview_vid in row_components:
+            search_outputs += [row, text_md, preview_vid]
+
         search_btn.click(do_search, search_inputs, search_outputs)
         query_box.submit(do_search, search_inputs, search_outputs)
-
-        gr.Markdown("### Önizleme\nYukarıdaki listeden bir sonuç numarası girip kısa bir klip görün "
-                     "(ham video değil, model-kalite proxy'den kırpılmış).")
-        with gr.Row():
-            preview_idx = gr.Number(label="Sonuç #", value=1, precision=0, scale=1)
-            preview_btn = gr.Button("Önizle", scale=1)
-        preview_status = gr.Markdown()
-        preview_video = gr.Video(label="Önizleme", autoplay=True)
-
-        preview_btn.click(do_preview, [intervals_state, preview_idx], [preview_video, preview_status])
 
     return app
 
