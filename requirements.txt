@@ -54,5 +54,9 @@ shapely>=2.0
 # --- Değerlendirme (proje-ozeti.md §7) ---
 ranx>=0.3
 
+# --- Arayüz (scripts/query_ui.py, proje-ozeti.md §3.2) ---
+# Saf Python - ek JS/frontend derlemesi gerekmiyor. GPU gerektirmiyor.
+gradio>=5.0
+
 # --- Geliştirme ---
 pytest>=8.0

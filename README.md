@@ -24,7 +24,8 @@ source .venv/bin/activate
 
 python -m scripts.ingest_all --dir ~/videolar/  # kaydet + ingest (vLLM kapali)
 ./scripts/start_vllm.sh                         # ayri terminal, modeli VRAM'e gore secer
-python -m scripts.query_cli --interactive       # ara
+python -m scripts.query_cli --interactive       # ara (terminal)
+python -m scripts.query_ui                      # ara (tarayici, http://127.0.0.1:7860)
 ```
 
 Tek gereken ön koşul: **NVIDIA sürücüsü** (`nvidia-smi` çalışmalı) ve
@@ -490,7 +491,8 @@ query/
   rerank.py          opsiyonel VLM dogrulama
 
 scripts/             init_storage, register_video, ingest_video,
-                     query_cli, eval_retrieval, setup_minio_notifications
+                     query_cli, query_ui (Gradio - sadece arama, video
+                     onizleme yok), eval_retrieval, setup_minio_notifications
 tests/               37 test (filtre gevsetme, aralik birlestirme,
                      pencereleme, ayristirici guvenlik agi)
 ```
