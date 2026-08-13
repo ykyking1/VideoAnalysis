@@ -72,6 +72,47 @@ def load_auair_records(annotations_path: str) -> list[dict]:
     return records
 
 
+
+# AU-AIR'in kendi bbox siniflaridan, YOLO26'nin "arac-benzeri" kumesiyle
+# (ingest/activities/visual_fields.py::VEHICLE_LIKE_CLASSES) ESLESEN alt
+# kume - Van/Bicycle/Trailer/Human'in COCO karsiligi yok, kasitli DISLANDI
+# (2026-08-13 worklog: YOLO bu veri setinde recall %16 olculdu - aerial/nadir
+# acidan cekilmis araclari COCO on-egitimli model neredeyse hic tanimiyor).
+GT_VEHICLE_CLASSES = {"Car", "Truck", "Motorbike", "Bus"}
+
+
+def load_gt_vehicle_counts(annotations_path: str) -> dict[str, int]:
+    """AU-AIR'in kendi etiketlerinden, her kare (`image_name`) icin GERCEK
+    arac sayisini doner - YOLO'nun tahmin ETMESI gereken sayinin ta kendisi.
+
+    NEDEN BU FONKSIYON VAR: YOLO'nun amaci, insan etiketi OLMAYAN gercek
+    arsiv videolarinda vehicle_count'u URETMEK. AU-AIR'de zaten gercek
+    etiket var - bu durumda YOLO calistirip onun (olcup kaydettigimiz)
+    hatali tahminini kullanmak yerine, mevcut GERCEK etiketi dogrudan
+    kullanmak gerekir (bkz. poc/auair_ingest.py::ingest_one() - YOLO hala
+    calisiyor ama bu fonksiyonun doldurdugu pencereleri OVERRIDE ETMIYOR)."""
+    with open(annotations_path, encoding="utf-8") as f:
+        data = json.load(f)
+    categories = data["categories"]
+    vehicle_idx = {categories.index(c) for c in GT_VEHICLE_CLASSES if c in categories}
+    counts: dict[str, int] = {}
+    for ann in data["annotations"]:
+        counts[ann["image_name"]] = sum(1 for b in ann["bbox"] if b["class"] in vehicle_idx)
+    return counts
+
+
+def gt_vehicle_count_for_window(t_start: float, t_end: float, group: list[dict],
+                                 gt_counts_by_image: dict[str, int]) -> int | None:
+    """Bir [t_start, t_end] penceresine dusen AU-AIR karelerindeki EN YUKSEK
+    es-zamanli arac sayisini doner (YOLO'nun count_vehicles()'iyla AYNI
+    yontem: toplam degil maksimum). Pencereye hic kare dusmuyorsa None -
+    cagiran taraf bu durumda YOLO'ya (varsa) geri dusebilir."""
+    frames = [r for r in group if t_start <= r["t"] <= t_end]
+    if not frames:
+        return None
+    return max(gt_counts_by_image.get(r["image_name"], 0) for r in frames)
+
+
 def split_by_source_video(records: list[dict]) -> dict[str, list[dict]]:
     """Tek bir kayit listesini, `image_name` onekine gore 8 ayri "video"ya
     boler ve her birinde t=0'i o videonun ilk karesine hizalar - tam olarak

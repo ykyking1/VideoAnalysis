@@ -61,18 +61,33 @@ class QueryResponse:
 
 def run_query(raw_query: str, top_k: int | None = None,
                enable_rerank: bool | None = None,
-               filter_overrides: StructuredFilters | None = None) -> QueryResponse:
+               filter_overrides: StructuredFilters | None = None,
+               disable_structured_parsing: bool = False) -> QueryResponse:
     """Doğal dil sorgusunu çalıştırır ve birleştirilmiş zaman aralıklarını döner.
 
     `filter_overrides` verilirse (ör. UI'deki manuel filtre alanları),
     vLLM'in ayrıştırdığı (ya da vLLM kapalıyken boş kalan) filtrelerin
-    üzerine DOLU alanlarla uygulanır - bkz. apply_filter_overrides()."""
+    üzerine DOLU alanlarla uygulanır - bkz. apply_filter_overrides().
+
+    `disable_structured_parsing=True` verilirse vLLM'e HİÇ gidilmez - sorgunun
+    tamamı `semantic_text` olarak geçer, filtre boş başlar (parse_ms=0).
+    NEDEN AYRI BİR BAYRAK VAR (vLLM'i kapatmaktan farklı): vLLM açıkken bile
+    "saf embedding araması ne buluyor" diye kıyaslamak isteyebilirsiniz -
+    2026-08-13 worklog'da tam bu kıyas AU-AIR'de filtrenin gerçek katkısını
+    ölçmek için kullanıldı (bkz. `query/hybrid_search.py` ve worklog).
+    `filter_overrides` bu bayraktan BAĞIMSIZ hâlâ uygulanır - kullanıcı
+    "yapısal ayrıştırmayı atla" derken elle girdiği filtreleri de kaybetmemeli."""
     started = time.perf_counter()
     timings: dict[str, float] = {}
 
-    t = time.perf_counter()
-    parsed = parse_query(raw_query)
-    timings["parse"] = (time.perf_counter() - t) * 1000
+    if disable_structured_parsing:
+        parsed = ParsedQuery(semantic_text=raw_query, raw_query=raw_query,
+                              filters=StructuredFilters())
+        timings["parse"] = 0.0
+    else:
+        t = time.perf_counter()
+        parsed = parse_query(raw_query)
+        timings["parse"] = (time.perf_counter() - t) * 1000
 
     if filter_overrides is not None and not filter_overrides.is_empty():
         parsed = ParsedQuery(

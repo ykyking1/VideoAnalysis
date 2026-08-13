@@ -17,6 +17,12 @@ tamamen semantik aramaya düşer - bu, `query/llm_parser.py`'nin kendi geri
 (ya da vLLM'in bulduğu tek bir alanı düzeltmek için) filtreli arama
 yapılabilsin diye - bkz. query/pipeline.py::apply_filter_overrides().
 
+"Saf semantik arama" onay kutusu bunun bir adım ötesi: vLLM AÇIK olsa
+bile yapısal ayrıştırmayı bilerek atlayıp saf embedding'in ne bulduğunu
+görmek için (ör. AU-AIR denemesinde filtrenin gerçekte ne kadar fark
+yarattığını ölçmekte kullanıldı - bkz. docs/worklog_2026-08-13.md). Manuel
+filtreler bu kutudan BAĞIMSIZ, hâlâ uygulanır.
+
 ÖNİZLEME NEDEN SINIRLI (MAX_PREVIEW_ROWS): her önizleme bir MinIO indirme +
 ffmpeg yeniden kodlama demek - TÜM sonuçlar için otomatik yapılırsa arama
 gecikmesi sonuç sayısıyla doğrusal büyür. Gradio'da bileşen sayısı sabit
@@ -177,7 +183,7 @@ def fetch_preview_clip(interval: Interval) -> str:
     return str(clip_path)
 
 
-def do_search_text(query: str, top_k: int, rerank: bool,
+def do_search_text(query: str, top_k: int, rerank: bool, disable_parsing: bool,
                     sensor_type, min_speed, max_speed, min_agl, max_agl,
                     over_sea, is_sunset, is_night, min_vehicles):
     """AŞAMA 1 (hızlı): arama sonuçlarını METİN olarak hemen doldurur, video
@@ -199,7 +205,8 @@ def do_search_text(query: str, top_k: int, rerank: bool,
             sensor_type, min_speed, max_speed, min_agl, max_agl,
             over_sea, is_sunset, is_night, min_vehicles,
         )
-        response = run_query(query, top_k=top_k, enable_rerank=rerank, filter_overrides=overrides)
+        response = run_query(query, top_k=top_k, enable_rerank=rerank, filter_overrides=overrides,
+                              disable_structured_parsing=disable_parsing)
     except ValueError as exc:
         return [f"**Hata:** manuel filtre alanlarından biri sayı olarak okunamadı ({exc}).", "", []] + empty_rows
     except Exception as exc:  # noqa: BLE001 - kullaniciya arayuzde goster, coksun istemiyoruz
@@ -292,6 +299,14 @@ def build_app() -> gr.Blocks:
                 value=config.RERANK_ENABLED,
                 label="VLM rerank (yavaş - aday başına bir çağrı)",
             )
+            disable_parsing_checkbox = gr.Checkbox(
+                value=False,
+                label="Saf semantik arama (vLLM'i atla)",
+                info="İşaretlenirse yapısal ayrıştırma HİÇ çalışmaz, sorgunun "
+                     "tamamı embedding aramasına gider - manuel filtreler "
+                     "yine uygulanır. vLLM açıkken bile 'saf embedding ne "
+                     "buluyor' diye kıyaslamak için (bkz. 2026-08-13 worklog).",
+            )
         gr.Examples(examples=EXAMPLE_QUERIES, inputs=query_box)
 
         with gr.Accordion("Manuel filtreler (opsiyonel - vLLM'in bulduğunu ezer)", open=False):
@@ -329,7 +344,7 @@ def build_app() -> gr.Blocks:
             row_components.append((row, text_md, preview_vid))
 
         search_inputs = [
-            query_box, top_k_slider, rerank_checkbox,
+            query_box, top_k_slider, rerank_checkbox, disable_parsing_checkbox,
             sensor_type_box, min_speed_box, max_speed_box, min_agl_box, max_agl_box,
             over_sea_radio, is_sunset_radio, is_night_radio, min_vehicles_box,
         ]
